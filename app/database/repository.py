@@ -6,6 +6,7 @@ from sqlalchemy import insert, select, union
 from sqlalchemy.orm import Session
 
 from app.models import Alert, DailyMetric, SensorReading
+from app.alerts.types import MaintenanceType
 
 
 class Repository:
@@ -36,6 +37,7 @@ class Repository:
 
     def alerts(
         self, *, transformer_id: str | None = None, parameter: str | None = None,
+        maintenance_type: MaintenanceType | None = None,
         severity: str | None = None, start_date: datetime | None = None,
         end_date: datetime | None = None, acknowledged: bool | None = None,
         resolved: bool | None = None, limit: int = 50, offset: int = 0,
@@ -44,7 +46,7 @@ class Repository:
         for column, value in (
             (Alert.transformer_id, transformer_id), (Alert.parameter, parameter),
             (Alert.severity, severity), (Alert.acknowledged, acknowledged),
-            (Alert.resolved, resolved),
+            (Alert.resolved, resolved), (Alert.maintenance_type, maintenance_type),
         ):
             if value is not None:
                 query = query.where(column == value)
@@ -90,3 +92,24 @@ class Repository:
         return list(self.session.scalars(
             query.order_by(DailyMetric.date.desc(), DailyMetric.id.desc()).limit(limit).offset(offset)
         ).all())
+
+    def previous_reading_with_feature(
+        self, transformer_id: str, timestamp: datetime, feature: str, before_id: int,
+    ) -> SensorReading | None:
+        """Latest earlier-ingested oil record at/before event time, excluding future rows.
+
+        An equal-timestamp record is returned explicitly so the formula reports an
+        unusable time interval, instead of silently skipping duplicated timestamps.
+        """
+        query = (
+            select(SensorReading)
+            .where(
+                SensorReading.transformer_id == transformer_id,
+                SensorReading.id < before_id,
+                SensorReading.timestamp <= timestamp,
+                SensorReading.raw_data.has_key(feature),
+            )
+            .order_by(SensorReading.timestamp.desc(), SensorReading.id.desc())
+            .limit(1)
+        )
+        return self.session.scalar(query)

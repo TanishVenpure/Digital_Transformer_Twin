@@ -19,7 +19,7 @@ def get_engine():
         raise DatabaseNotConfigured("DATABASE_URL is not configured")
     return create_engine(
         url.get_secret_value(), pool_pre_ping=True,
-        connect_args={"connect_timeout": 5}, hide_parameters=True,
+        connect_args={"connect_timeout": 5, "options": "-c timezone=UTC"}, hide_parameters=True,
     )
 
 

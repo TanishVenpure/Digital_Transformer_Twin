@@ -4,6 +4,8 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from app.formulas.base import FormulaResult
+
 
 def as_utc(value: datetime) -> datetime:
     """Legacy naive timestamps are explicitly interpreted as UTC."""
@@ -47,10 +49,12 @@ class SensorReadingResponse(BaseModel):
     timestamp: datetime
     raw_data: dict[str, Any]
     created_at: datetime
+    evaluations: dict[str, FormulaResult] = Field(default_factory=dict)
 
 
 class BatchResponse(BaseModel):
     inserted: int
+    evaluations: list[dict[str, FormulaResult]] = Field(default_factory=list)
 
 
 class UploadResponse(BaseModel):

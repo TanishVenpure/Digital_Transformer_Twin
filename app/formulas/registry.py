@@ -21,5 +21,17 @@ class FormulaRegistry:
         return self._formulas.copy()
 
 
-# Intentionally empty. Future formula modules register approved implementations.
+# Approved formulas register through this existing registry.
 formula_registry = FormulaRegistry()
+
+from app.formulas.current_instrument_error import CurrentInstrumentError
+
+formula_registry.register(CurrentInstrumentError())
+
+from app.formulas.voltage_instrument_error import VoltageInstrumentError
+
+formula_registry.register(VoltageInstrumentError())
+
+from app.formulas.oil_level import OilLevelPredictiveMaintenance
+
+formula_registry.register(OilLevelPredictiveMaintenance())

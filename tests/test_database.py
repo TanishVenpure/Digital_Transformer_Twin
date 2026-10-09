@@ -20,6 +20,7 @@ def test_metadata_uses_postgresql_jsonb():
     assert isinstance(Base.metadata.tables["daily_metrics"].c.aggregated_data.type, JSONB)
     assert isinstance(Base.metadata.tables["daily_metrics"].c.formula_results.type, JSONB)
     assert isinstance(Base.metadata.tables["alerts"].c.formula_inputs.type, JSONB)
+    assert isinstance(Base.metadata.tables["alerts"].c.details.type, JSONB)
 
 
 def test_reject_other_database_dialects():
@@ -36,7 +37,8 @@ def test_url_secret_is_masked():
 
 def test_alembic_structure():
     scripts = ScriptDirectory.from_config(Config("alembic.ini"))
-    assert scripts.get_heads() == []
+    assert scripts.get_heads() == ["0002"]
+    assert scripts.get_revision("0002").down_revision == "0001"
     assert (Path(scripts.dir) / "env.py").is_file()
 
 

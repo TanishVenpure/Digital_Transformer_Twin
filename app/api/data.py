@@ -21,7 +21,9 @@ def create_batch(
     readings: Annotated[list[SensorReadingCreate], Body(min_length=1, max_length=10000)],
     db: Session = Depends(get_db),
 ):
-    return BatchResponse(inserted=ProcessingService(db).receive_batch(readings))
+    service = ProcessingService(db)
+    inserted = service.receive_batch(readings)
+    return BatchResponse(inserted=inserted, evaluations=service.batch_evaluations)
 
 
 @router.post("/upload", response_model=UploadResponse)

@@ -17,7 +17,7 @@ def alert_record():
         id=1, transformer_id="T01", timestamp=now, parameter="fixture",
         formula_name="fixture", formula_value=0.0, threshold=0.0,
         comparison_operator=">", severity="fixture", message="Stored alert fixture",
-        formula_inputs={}, acknowledged=False, resolved=False,
+        formula_inputs={}, details={}, maintenance_type=None, acknowledged=False, resolved=False,
         resolved_at=None, created_at=now,
     )
 

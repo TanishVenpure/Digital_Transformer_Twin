@@ -58,7 +58,8 @@ def test_store_single_reading(client, db):
 def test_batch_uses_bulk_insert(client, db):
     response = client.post("/api/v1/data/batch", json=[payload(), payload()])
     assert response.status_code == 201
-    assert response.json() == {"inserted": 2}
+    assert response.json()["inserted"] == 2
+    assert len(response.json()["evaluations"]) == 2
     assert len(db.execute.call_args.args[1]) == 2
     assert db.execute.call_args.args[1][0]["raw_data"] == payload()["data"]
     db.commit.assert_called_once()

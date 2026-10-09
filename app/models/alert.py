@@ -1,11 +1,12 @@
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import Boolean, DateTime, Float, Index, String, Text
+from sqlalchemy import Boolean, DateTime, Float, Index, String, Text, Enum, text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base, utc_now
+from app.alerts.types import MaintenanceType
 
 
 class Alert(Base):
@@ -22,6 +23,13 @@ class Alert(Base):
     comparison_operator: Mapped[str] = mapped_column(String(2))
     severity: Mapped[str] = mapped_column(String(50), index=True)
     message: Mapped[str] = mapped_column(Text)
+    maintenance_type: Mapped[MaintenanceType | None] = mapped_column(
+        Enum(MaintenanceType, native_enum=False, create_constraint=True, name="maintenance_type"),
+        nullable=True, index=True,
+    )
+    details: Mapped[dict[str, Any]] = mapped_column(
+        JSONB, default=dict, server_default=text("'{}'::jsonb"),
+    )
     formula_inputs: Mapped[dict[str, Any]] = mapped_column(JSONB)
     acknowledged: Mapped[bool] = mapped_column(Boolean, default=False)
     resolved: Mapped[bool] = mapped_column(Boolean, default=False, index=True)

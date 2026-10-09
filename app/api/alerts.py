@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, Path, Query
 from sqlalchemy.orm import Session
 
 from app.database.db import get_db
+from app.alerts.types import MaintenanceType
 from app.schemas.alert import AlertHistoryResponse, AlertResponse
 from app.services.alert_service import AlertService
 
@@ -16,6 +17,7 @@ Offset = Annotated[int, Query(ge=0)]
 
 @router.get("", response_model=list[AlertResponse])
 def list_alerts(
+    maintenance_type: MaintenanceType | None = None,
     parameter: str | None = None, severity: str | None = None,
     start_date: datetime | None = None, end_date: datetime | None = None,
     acknowledged: bool | None = None, resolved: bool | None = None,
@@ -23,7 +25,7 @@ def list_alerts(
 ):
     """Use resolved=false to retrieve active alerts for the agent."""
     return AlertService(db).list_alerts(
-        parameter=parameter, severity=severity, start_date=start_date, end_date=end_date,
+        maintenance_type=maintenance_type, parameter=parameter, severity=severity, start_date=start_date, end_date=end_date,
         acknowledged=acknowledged, resolved=resolved, limit=limit, offset=offset,
     )
 
@@ -31,6 +33,7 @@ def list_alerts(
 # Register the fixed history path before /{alert_id}.
 @router.get("/history", response_model=AlertHistoryResponse)
 def alert_history(
+    maintenance_type: MaintenanceType | None = None,
     parameter: str | None = None, severity: str | None = None,
     start_date: datetime | None = None, end_date: datetime | None = None,
     acknowledged: bool | None = None, resolved: bool | None = None,
@@ -38,7 +41,7 @@ def alert_history(
 ):
     """Paginated stored alert history, including resolved alerts by default."""
     return AlertService(db).history(
-        parameter=parameter, severity=severity, start_date=start_date, end_date=end_date,
+        maintenance_type=maintenance_type, parameter=parameter, severity=severity, start_date=start_date, end_date=end_date,
         acknowledged=acknowledged, resolved=resolved, limit=limit, offset=offset,
     )
 

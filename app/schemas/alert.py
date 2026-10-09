@@ -1,7 +1,9 @@
 from datetime import datetime
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
+
+from app.alerts.types import MaintenanceType
 
 
 class AlertResponse(BaseModel):
@@ -17,6 +19,8 @@ class AlertResponse(BaseModel):
     comparison_operator: str
     severity: str
     message: str
+    maintenance_type: MaintenanceType | None = None
+    details: dict[str, Any] = Field(default_factory=dict)
     formula_inputs: dict[str, Any]
     acknowledged: bool
     resolved: bool
