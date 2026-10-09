@@ -1,0 +1,30 @@
+# Demo thresholds for the 3D digital-twin page (frontend/). Use with THRESHOLDS_FILE=config/thresholds.demo.yaml.
+# Rules 1 and 2 are unchanged. The oil values are from the twin's IoT design (warning 35 %, minimum 20 %,
+# 30 min lead time), not from a nameplate; production keeps config/thresholds.yaml.
+# Only the three supplied maintenance rules are registered.
+# Severity is an operational label and is independent of maintenance_type.
+formulas:
+  3_phase_current_instrument_error:
+    operator: ">"
+    threshold: 1.0
+    unit: percent
+    maintenance_type: SYSTEM_MAINTENANCE
+    severity: WARNING
+    message: "3-phase current instrument error exceeded the configured allowed deviation."
+  3_phase_voltage_instrument_error:
+    operator: ">"
+    threshold: 1.0
+    unit: percent
+    maintenance_type: SYSTEM_MAINTENANCE
+    severity: WARNING
+    message: "3-phase voltage instrument error exceeded the configured allowed deviation."
+  oil_level_predictive_maintenance:
+    # Supply real values in the same oil_level units as the IoT source.
+    # Null values disable decisions; no production oil thresholds are assumed.
+    minimum_oil_level: 20
+    warning_oil_level: 35
+    maintenance_lead_time: 0.5
+    time_unit: hours
+    level_operator: "<="
+    lead_time_operator: "<="
+    maintenance_type: TRANSFORMER_MAINTENANCE

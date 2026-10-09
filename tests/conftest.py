@@ -4,8 +4,18 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
+from app.config.settings import get_settings
 from app.database.db import get_db
 from app.main import create_app
+
+
+@pytest.fixture(autouse=True)
+def production_thresholds(monkeypatch):
+    """Tests expect config/thresholds.yaml even when a local .env selects the demo file."""
+    monkeypatch.setenv("THRESHOLDS_FILE", "config/thresholds.yaml")
+    get_settings.cache_clear()
+    yield
+    get_settings.cache_clear()
 
 
 @pytest.fixture

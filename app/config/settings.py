@@ -18,6 +18,8 @@ class Settings(BaseSettings):
     api_v1_prefix: str = "/api/v1"
     database_url: SecretStr | None = None
     debug: bool = False
+    # Relative paths resolve against the project root.
+    thresholds_file: Path = Path("config") / "thresholds.yaml"
 
     @field_validator("database_url")
     @classmethod
@@ -30,6 +32,11 @@ class Settings(BaseSettings):
             if not valid:
                 raise ValueError("DATABASE_URL must use postgresql+psycopg")
         return value
+
+    @field_validator("thresholds_file")
+    @classmethod
+    def project_relative(cls, value: Path) -> Path:
+        return value if value.is_absolute() else PROJECT_ROOT / value
 
     @field_validator("api_v1_prefix")
     @classmethod

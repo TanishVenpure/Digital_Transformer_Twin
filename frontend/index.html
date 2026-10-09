@@ -1,0 +1,846 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Transformer Digital Twin</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600&family=IBM+Plex+Sans:wght@400;500&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: the transformer fills the first screen as the hero, with a live sensor panel docked on its right;
+   the parts list and renders follow below. The hero is always dark (a control-room screen); the page below follows the theme. */
+:root {
+  --bg: #eef0ee; --panel: #ffffff; --fg: #1d2421; --muted: #5d6863; --line: #d3d8d5; --accent: #b5562a;
+  --stage: #0b0d0c; --glass: rgba(16, 20, 18, .82); --glass-line: rgba(255, 255, 255, .12);
+  --s-fg: #e4e9e6; --s-muted: #95a19b; --s-faint: #6c7772; --s-accent: #e08a5c;
+  --ok: #34d399; --pred: #60a5fa; --warn: #f5b83d; --maint: #fb923c; --alarm: #ff5a4f;
+  --display: "Barlow Condensed", "Arial Narrow", sans-serif;
+  --body: "IBM Plex Sans", system-ui, sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #121614; --panel: #1a1f1d; --fg: #e4e9e6; --muted: #98a39e; --line: #2c3431; --accent: #e08a5c; color-scheme: dark } }
+:root[data-theme="dark"] { --bg: #121614; --panel: #1a1f1d; --fg: #e4e9e6; --muted: #98a39e; --line: #2c3431; --accent: #e08a5c; color-scheme: dark }
+body { background: var(--bg); color: var(--fg); font-family: var(--body); line-height: 1.5; }
+
+/* ---------- hero ---------- */
+.hero { position: relative; height: calc(100svh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px)); min-height: 560px; background: var(--stage); color: var(--s-fg); overflow: hidden; }
+.viewport { position: absolute; inset: 0 360px 0 0; }
+.viewport canvas { display: block; width: 100%; height: 100%; touch-action: none; }
+.status { position: absolute; inset: 0; display: grid; place-items: center; color: var(--s-muted); font: .85rem var(--mono); }
+.title { position: absolute; left: 20px; top: 16px; display: grid; gap: 4px; pointer-events: none; max-width: calc(100% - 40px); }
+h1 { font-family: var(--display); font-weight: 600; font-size: clamp(1.7rem, 3.4vw, 2.6rem); letter-spacing: .01em; margin: 0; line-height: 1.05; text-wrap: balance; }
+.rating { font: .8rem var(--mono); color: var(--s-muted); }
+.health { display: inline-flex; align-items: center; gap: 8px; font: 500 .8rem var(--body); margin-top: 6px; padding: 4px 10px 4px 8px; border-radius: 999px; background: rgba(255,255,255,.06); border: 1px solid var(--glass-line); width: max-content; }
+.health i { width: 9px; height: 9px; border-radius: 50%; background: var(--c); box-shadow: 0 0 10px var(--c); }
+.health[data-s="CRITICAL"] i { animation: blink 1s steps(2) infinite; }
+.tools { position: absolute; right: 12px; top: 14px; display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-end; }
+.hero button, .seg label { font: 500 .8rem var(--body); background: rgba(255,255,255,.07); color: var(--s-fg); border: 1px solid rgba(255,255,255,.18); border-radius: 4px; padding: 6px 10px; cursor: pointer; }
+.hero button:hover, .seg label:hover { background: rgba(255,255,255,.15); }
+.hero button:focus-visible, .seg input:focus-visible + label, .hero input[type=range]:focus-visible { outline: 2px solid var(--s-accent); outline-offset: 2px; }
+.seg { display: flex; }
+.seg input { position: absolute; opacity: 0; pointer-events: none; }
+.seg label { border-radius: 0; margin-left: -1px; }
+.seg label:first-of-type { border-radius: 4px 0 0 4px; margin-left: 0; }
+.seg label:last-of-type { border-radius: 0 4px 4px 0; }
+.seg input:checked + label { background: var(--s-accent); border-color: var(--s-accent); color: #160d07; }
+.bottom { position: absolute; left: 16px; right: 16px; bottom: 12px; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; }
+.explode { display: flex; align-items: center; gap: 10px; flex: 1 1 240px; max-width: 560px; color: var(--s-muted); font: .75rem var(--mono); }
+.explode input { flex: 1; accent-color: var(--s-accent); min-width: 0; }
+.explode output { color: var(--s-fg); font-variant-numeric: tabular-nums; min-width: 4ch; text-align: right; }
+.check { color: var(--s-muted); font: .75rem var(--mono); display: flex; align-items: center; gap: 6px; cursor: pointer; }
+.check input { accent-color: var(--s-accent); }
+.hint { color: var(--s-faint); font: .72rem var(--mono); flex-basis: 100%; }
+.tip { position: absolute; pointer-events: none; background: rgba(10,12,11,.92); border: 1px solid var(--glass-line); border-radius: 4px; padding: 6px 9px; font: .78rem/1.35 var(--body); max-width: 260px; transform: translate(12px, 12px); z-index: 3; }
+.tip b { font-weight: 500; display: block; }
+.tip span { color: var(--s-muted); font-size: .72rem; }
+
+/* sensor chips that float over the model; colour follows the engine's five standard statuses */
+.chips { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
+[data-s="NORMAL"] { --c: var(--ok); }
+[data-s="PREDICTED_MAINTENANCE"] { --c: var(--pred); }
+[data-s="WARNING"] { --c: var(--warn); }
+[data-s="MAINTENANCE_REQUIRED"] { --c: var(--maint); }
+[data-s="CRITICAL"] { --c: var(--alarm); }
+.chip { position: absolute; left: 0; top: 0; display: flex; align-items: center; gap: 5px; padding: 2px 7px 2px 5px; border-radius: 3px; font: 500 .68rem/1.4 var(--mono); font-variant-numeric: tabular-nums; white-space: nowrap; color: var(--s-fg); background: rgba(8,10,9,.78); border: 1px solid color-mix(in srgb, var(--c) 55%, transparent); transform: translate(-50%, calc(-100% - 10px)); pointer-events: auto; cursor: pointer; transition: opacity .2s; }
+.chip::after { content: ""; position: absolute; left: 50%; top: 100%; width: 1px; height: 9px; background: color-mix(in srgb, var(--c) 70%, transparent); }
+.chip b { font-weight: 500; color: var(--c); }
+.chip[data-s="CRITICAL"] { box-shadow: 0 0 14px color-mix(in srgb, var(--alarm) 55%, transparent); z-index: 2; }
+.chip.dim { opacity: .18; }
+.chip.focus { outline: 2px solid var(--c); outline-offset: 2px; z-index: 3; }
+
+/* panel */
+.panel { position: absolute; top: 0; right: 0; bottom: 0; width: 360px; background: var(--glass); border-left: 1px solid var(--glass-line); display: flex; flex-direction: column; min-height: 0; }
+.panel header { padding: 14px 16px 12px; display: grid; gap: 10px; border-bottom: 1px solid var(--glass-line); }
+.panel h2 { font: 500 1.25rem var(--display); letter-spacing: .02em; margin: 0; display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.panel h2 small { font: .72rem var(--mono); color: var(--s-muted); letter-spacing: 0; text-align: right; }
+.scen { display: flex; flex-wrap: wrap; gap: 5px; }
+.scen button { padding: 4px 8px; font-size: .74rem; }
+.scen button[aria-pressed="true"] { background: rgba(224,138,92,.22); border-color: var(--s-accent); }
+.list { overflow-y: auto; padding: 0 0 8px; flex: 1; min-height: 0; }
+.hcard { display: grid; grid-template-columns: auto 1fr; gap: 14px; align-items: center; margin: 12px 16px 6px; padding: 10px 12px; border: 1px solid color-mix(in srgb, var(--c) 45%, transparent); border-radius: 6px; background: color-mix(in srgb, var(--c) 8%, transparent); }
+.score { display: grid; justify-items: center; line-height: 1; }
+.score b { font: 600 2.2rem var(--display); color: var(--c); font-variant-numeric: tabular-nums; }
+.score small { font: .62rem var(--mono); color: var(--s-muted); text-transform: uppercase; letter-spacing: .08em; margin-top: 3px; }
+.prio { font: 500 .72rem var(--mono); color: var(--c); }
+.hcard p { margin: 3px 0 0; font-size: .8rem; line-height: 1.35; }
+.sec { padding: 10px 16px 4px; font: 500 .72rem var(--body); text-transform: uppercase; letter-spacing: .09em; color: var(--s-muted); display: flex; justify-content: space-between; }
+.sec span { font: .68rem var(--mono); text-transform: none; letter-spacing: 0; color: var(--s-faint); }
+.mod { display: grid; grid-template-columns: 18px 1fr auto; gap: 2px 8px; padding: 6px 16px; cursor: pointer; align-items: start; }
+.mod:hover { background: rgba(255,255,255,.05); }
+.mod[aria-pressed="true"] { background: rgba(224,138,92,.12); }
+.mod:focus-visible { outline: 2px solid var(--s-accent); outline-offset: -2px; }
+.mod .n { font: .7rem var(--mono); color: var(--s-faint); padding-top: 2px; }
+.mod .nm { font-size: .82rem; min-width: 0; }
+.mod .nm small { display: block; color: var(--s-muted); font: .68rem/1.35 var(--mono); }
+.mod .r { display: grid; justify-items: end; gap: 2px; }
+.pill { font: 500 .64rem var(--mono); padding: 1px 6px; border-radius: 999px; color: var(--c); border: 1px solid color-mix(in srgb, var(--c) 60%, transparent); white-space: nowrap; }
+.mod[data-s="CRITICAL"] .pill { background: color-mix(in srgb, var(--alarm) 22%, transparent); animation: blink 1s steps(2) infinite; }
+.mod .v { font: 500 .78rem var(--mono); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.reads { margin: 4px 16px 0; font: .72rem var(--mono); color: var(--s-muted); }
+.reads summary { cursor: pointer; padding: 6px 0; font: 500 .72rem var(--body); text-transform: uppercase; letter-spacing: .09em; }
+.rgrid { display: grid; grid-template-columns: auto 1fr 1fr; gap: 2px 10px; padding-bottom: 6px; font-variant-numeric: tabular-nums; }
+.rgrid b { font-weight: 500; color: var(--s-fg); }
+.rgrid span { text-align: right; }
+.rgrid .h { color: var(--s-faint); }
+.log { border-top: 1px solid var(--glass-line); padding: 10px 16px 14px; max-height: 150px; overflow-y: auto; }
+.log h3 { margin: 0 0 6px; font: 500 .72rem var(--body); text-transform: uppercase; letter-spacing: .09em; color: var(--s-muted); }
+.log ol { list-style: none; margin: 0; padding: 0; display: grid; gap: 3px; font: .72rem/1.4 var(--mono); color: var(--s-muted); }
+.log li b { font-weight: 500; color: var(--c); }
+.log .empty { color: var(--s-faint); }
+@keyframes blink { 50% { opacity: .35; } }
+@media (prefers-reduced-motion: reduce) { .health i, .mod .pill { animation: none !important; } }
+
+@media (max-width: 820px) {
+  .hero { height: auto; min-height: 0; display: flex; flex-direction: column; }
+  .viewport { position: relative; inset: auto; height: 72svh; min-height: 420px; }
+  .panel { position: relative; width: auto; border-left: 0; border-top: 1px solid var(--glass-line); }
+  .list { max-height: none; overflow: visible; }
+  .chip[data-s="NORMAL"] { display: none; }
+  .title { left: 16px; top: 12px; }
+  h1 { font-size: 1.35rem; }
+  .rating, .note, .hint { display: none; }
+  .tools { top: 84px; left: 16px; right: auto; justify-content: flex-start; }
+  .bottom { bottom: 10px; }
+}
+
+/* ---------- page below the hero ---------- */
+.wrap { max-width: 1200px; margin: 0 auto; padding-inline: 16px; padding-block: 28px 40px; display: grid; gap: 20px; }
+.specs { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 1px; background: var(--line); border: 1px solid var(--line); border-radius: 6px; overflow: hidden; margin: 0; }
+.specs div { background: var(--panel); padding: 10px 14px; }
+.specs dt { font-size: .72rem; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); }
+.specs dd { margin: 2px 0 0; font-family: var(--mono); font-variant-numeric: tabular-nums; }
+.wrap h2 { font-family: var(--display); font-weight: 500; font-size: 1.5rem; margin: 10px 0 0; }
+.wrap p { margin: 0; max-width: 65ch; color: var(--muted); }
+.tbl { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; font-size: .88rem; min-width: 560px; }
+th, td { text-align: left; padding: 8px 12px 8px 0; border-top: 1px solid var(--line); vertical-align: top; }
+th { font: 500 .72rem var(--body); text-transform: uppercase; letter-spacing: .08em; color: var(--muted); border-top: 0; }
+td.num { font-family: var(--mono); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.parts { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 0 28px; margin: 0; }
+.parts div { border-top: 1px solid var(--line); padding: 10px 0; display: grid; gap: 2px; min-width: 0; }
+.parts dt { font-weight: 500; }
+.parts dd { margin: 0; color: var(--muted); font-size: .9rem; }
+.parts .sw { display: inline-block; width: .7em; height: .7em; border-radius: 2px; margin-right: .5em; }
+.media { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px; align-items: start; }
+figure { margin: 0; display: grid; gap: 8px; min-width: 0; }
+figure img, figure video { border-radius: 6px; display: block; width: 100%; height: auto; max-width: 100%; background: var(--stage); }
+figcaption { font-size: .85rem; color: var(--muted); }
+.wide { grid-column: 1 / -1; }
+</style>
+
+<section class="hero" aria-label="Interactive 3D transformer with IoT monitoring">
+  <div class="viewport" id="stage">
+    <div class="status" id="status">Loading 3D model…</div>
+    <div class="chips" id="chips"></div>
+    <div class="title">
+      <h1>Distribution Transformer Digital Twin</h1>
+      <span class="rating" id="rating">630 kVA · 11 / 0.433 kV · Dyn11 · ONAN · rated LV 841 A</span>
+      <span class="rating note">Thresholds use the 630 kVA rating; the 3D model is drawn at 500 kVA proportions.</span>
+      <span class="health" id="health" data-s="NORMAL"><i></i><span id="healthTxt">Health 100 · P4 Routine</span></span>
+    </div>
+    <div class="tools">
+      <div class="seg" role="radiogroup" aria-label="Tank view">
+        <input type="radio" name="mode" id="m-solid" value="solid"><label for="m-solid">Solid</label>
+        <input type="radio" name="mode" id="m-cut" value="cut"><label for="m-cut">Cutaway</label>
+        <input type="radio" name="mode" id="m-xray" value="xray" checked><label for="m-xray">X-ray</label>
+      </div>
+      <button id="spin" type="button">Spin</button>
+      <button id="reset" type="button">Reset view</button>
+    </div>
+    <div class="bottom">
+      <button id="play" type="button">Assemble</button>
+      <label class="explode" for="t">Exploded
+        <input type="range" id="t" min="0" max="100" value="100">
+        <output id="tv" for="t">100%</output>
+      </label>
+      <label class="check" for="oil"><input type="checkbox" id="oil" checked> Oil</label>
+      <label class="check" for="lbl"><input type="checkbox" id="lbl" checked> Labels</label>
+      <span class="hint">Click a module or sensor to fly to it · drag to rotate · scroll or pinch to zoom · right-drag to pan</span>
+    </div>
+    <div class="tip" id="tip" hidden></div>
+  </div>
+
+  <aside class="panel" aria-label="IoT monitoring">
+    <header>
+      <h2>IoT monitoring <small id="clock">simulated readings</small></h2>
+      <div class="scen" role="group" aria-label="Simulate a condition">
+        <button type="button" data-scen="auto" aria-pressed="true">Auto demo</button>
+        <button type="button" data-scen="normal" aria-pressed="false">Normal</button>
+        <button type="button" data-scen="overload" aria-pressed="false">Overload</button>
+        <button type="button" data-scen="leak" aria-pressed="false">Oil leak</button>
+        <button type="button" data-scen="sag" aria-pressed="false">Voltage sag</button>
+        <button type="button" data-scen="ct_drift" aria-pressed="false">CT drift</button>
+        <button type="button" data-scen="vt_fault" aria-pressed="false">VT fault</button>
+      </div>
+    </header>
+    <div class="list">
+      <div class="hcard" id="hcard" data-s="NORMAL">
+        <div class="score"><b id="score">100</b><small>Health</small></div>
+        <div><span class="prio" id="prio">P4 · Routine</span><p id="action">No action needed. Continue routine monitoring.</p></div>
+      </div>
+      <div class="sec">Modules <span>click to highlight</span></div>
+      <div id="mods"></div>
+      <details class="reads"><summary>Readings (measured / reference)</summary><div class="rgrid" id="reads"></div></details>
+    </div>
+    <div class="log">
+      <h3>Status changes</h3>
+      <ol id="log"><li class="empty">No changes yet.</li></ol>
+    </div>
+  </aside>
+</section>
+
+<div class="wrap">
+  <dl class="specs">
+    <div><dt>Tank (L × W × H)</dt><dd>1.40 × 0.80 × 1.20 m</dd></div>
+    <div><dt>Core</dt><dd>3-limb CRGO, 7 steps, Ø190 mm</dd></div>
+    <div><dt>Windings / phase</dt><dd>LV foil · HV 8 disc coils</dd></div>
+    <div><dt>IoT inputs</dt><dd>12 dynamic + 6 reference</dd></div>
+  </dl>
+
+  <h2>Monitoring modules</h2>
+  <p>Seven modules turn the raw readings into one of five standard outputs: <b style="color:var(--ok)">Normal</b>, <b style="color:var(--pred)">Predicted maintenance</b>, <b style="color:var(--warn)">Warning</b>, <b style="color:var(--maint)">Maintenance required</b> and <b style="color:var(--alarm)">Critical</b>. A module predicts maintenance when its trend reaches a limit within the 30 min lead time. The Health Engine combines the seven outputs into a score, a priority and an action. It is rule-based for now; an ML model can replace it with the same inputs and outputs.</p>
+  <p>When this page is served by the Digital Transformer Twin API, it posts a reading every 2 s to <code>/api/v1/data/reading</code>. The API's three rules then decide modules 1, 2 and 5 (current and voltage instrument error, oil-level predictive maintenance) and keep their alerts in PostgreSQL; those rows say "checked by API". The other four modules run on the page until the API has rules for them. For the oil trend, each simulated second is stamped as one minute.</p>
+  <div class="tbl">
+    <table>
+      <thead><tr><th>#</th><th>Module</th><th>Inputs</th><th>Metric</th><th>Warning</th><th>Critical / maintenance</th></tr></thead>
+      <tbody>
+        <tr><td>1</td><td>Current measurement health</td><td>IA–IC vs IA_REF–IC_REF</td><td class="num">E = |I − I<sub>ref</sub>| / I<sub>ref</sub></td><td class="num">–</td><td class="num">E<sub>max</sub> &gt; 1% → maintenance</td></tr>
+        <tr><td>2</td><td>Voltage measurement health</td><td>VA–VC vs VA_REF–VC_REF</td><td class="num">E = |V − V<sub>ref</sub>| / V<sub>ref</sub></td><td class="num">–</td><td class="num">E<sub>max</sub> &gt; 1% → maintenance</td></tr>
+        <tr><td>3</td><td>Current IoT</td><td>IA, IB, IC</td><td class="num">I<sub>max</sub> / 841 A, dI/dt</td><td class="num">&gt; 90%</td><td class="num">&gt; 100%</td></tr>
+        <tr><td>4</td><td>Voltage IoT</td><td>VA, VB, VC</td><td class="num">|V − 250 V| / 250 V, dD/dt</td><td class="num">&gt; ±5%</td><td class="num">&gt; ±10%</td></tr>
+        <tr><td>5</td><td>Oil-level IoT</td><td>Oil level</td><td class="num">dO/dt, time to minimum</td><td class="num">&lt; 35%</td><td class="num">&lt; 20%</td></tr>
+        <tr><td>6</td><td>Top-oil temperature IoT</td><td>Top oil, ambient</td><td class="num">T<sub>oil</sub>, rise, time to alarm</td><td class="num">&gt; 95 °C or rise &gt; 40 °C</td><td class="num">&gt; 105 °C (trip)</td></tr>
+        <tr><td>7</td><td>Winding temperature IoT</td><td>Windings A–C, ambient</td><td class="num">T<sub>hot</sub> − T<sub>amb</sub>, dT/dt</td><td class="num">rise &gt; 40.5 °C</td><td class="num">rise &gt; 45 °C</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h2>What's inside</h2>
+  <p>Drag the slider to lift the cover, pull the core and coils out of the tank and take the windings off the limbs. Proportions follow utility specifications for distribution transformers of this size.</p>
+  <dl class="parts">
+    <div><dt><i class="sw" style="background:#2b2e33"></i>Core</dt><dd>Three limbs and two yokes of CRGO steel, 7-step cruciform section in a 190 mm circle, 600 mm window.</dd></div>
+    <div><dt><i class="sw" style="background:#d77a45"></i>LV winding</dt><dd>Copper foil on a pressboard tube, innermost around each limb, 4.5 mm from the core.</dd></div>
+    <div><dt><i class="sw" style="background:#cfa774"></i>HV-LV barrier</dt><dd>Pressboard cylinder and 12 axial wedges forming the 11 mm HV-LV oil duct.</dd></div>
+    <div><dt><i class="sw" style="background:#a65a2c"></i>HV winding</dt><dd>8 disc coils of paper-covered copper per phase with radial spacers. Tapping terminals sit at mid height.</dd></div>
+    <div><dt><i class="sw" style="background:#3a3f3e"></i>Clamps and tie rods</dt><dd>100 × 50 mm channels on both yokes, 8 insulated M16 tie rods, 75 × 40 mm base channels, lifting lugs.</dd></div>
+    <div><dt><i class="sw" style="background:#b8915e"></i>HV leads</dt><dd>Crepe-paper insulated line leads to the HV bushings, Dyn11 delta jumpers, and wood lead cleats.</dd></div>
+    <div><dt><i class="sw" style="background:#e3925f"></i>LV bus bars</dt><dd>40 × 8 mm copper bars to the LV bushings and a star bar to the neutral bushing.</dd></div>
+    <div><dt><i class="sw" style="background:#5a2a12"></i>Tap switch</dt><dd>Off-circuit tap switch above the core, wired to the HV tapping leads and turned by the handle on the cover.</dd></div>
+    <div><dt><i class="sw" style="background:#e6a43a"></i>Oil</dt><dd>Mineral insulating oil fills the tank. The conservator above takes up its expansion.</dd></div>
+  </dl>
+
+  <h2>Rendered views</h2>
+  <div class="media">
+    <figure class="wide">
+      <img src="cutaway.png" alt="Cutaway render with the HV-side tank wall removed, showing three copper disc windings, core clamps, leads and amber oil inside the tank" width="1920" height="1080" loading="lazy">
+      <figcaption>Cutaway through the HV-side wall. The front half of the oil is removed so the active part shows.</figcaption>
+    </figure>
+    <figure>
+      <video src="assembly.mp4" poster="exploded.png" width="720" height="720" muted loop playsinline controls preload="metadata"></video>
+      <figcaption>Assembly animation, rendered in Cycles from the Blender script's keyframes.</figcaption>
+    </figure>
+    <figure>
+      <img src="exploded.png" alt="Exploded view: cover with bushings and conservator lifted, leads, top yoke, HV and LV windings stacked above the core, radiators pulled out from the tank" width="1440" height="1440" loading="lazy">
+      <figcaption>Fully exploded view.</figcaption>
+    </figure>
+    <figure class="wide">
+      <img src="preview.png" alt="Rendered distribution transformer with labelled temperature and current IoT sensors" width="1920" height="1080" loading="lazy">
+      <figcaption>Exterior with the IoT sensors labelled, from the original script.</figcaption>
+    </figure>
+  </div>
+</div>
+
+<script src="vendor/three/three.min.js"></script>
+<script src="vendor/three/GLTFLoader.js"></script>
+<script src="vendor/three/OrbitControls.js"></script>
+<script src="vendor/three/RoomEnvironment.js"></script>
+<script src="engine.js"></script>
+<script src="twin-api.js"></script>
+<script>
+(function () {
+  const $ = id => document.getElementById(id);
+  const stage = $('stage'), status = $('status');
+  const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const B = (x, y, z) => new THREE.Vector3(x, z, -y);    // Blender (Z up) -> glTF/three (Y up)
+
+  // ------------------------------------------------------------------ IoT engine and sensors
+  // The 7 monitoring modules and the Health Engine are in engine.js (TwinEngine), the same logic the
+  // FastAPI backend runs in app/engine.py. When a backend is connected it sends the module outputs;
+  // otherwise the page runs the engine itself on simulated readings.
+  const E = window.TwinEngine;
+  const COL = { NORMAL: '#34d399', PREDICTED_MAINTENANCE: '#60a5fa', WARNING: '#f5b83d', MAINTENANCE_REQUIRED: '#fb923c', CRITICAL: '#ff5a4f' };
+  const WORD = { NORMAL: 'Normal', PREDICTED_MAINTENANCE: 'Predicted', WARNING: 'Warning', MAINTENANCE_REQUIRED: 'Maintenance', CRITICAL: 'Critical' };
+
+  // dev: an existing IoT device in the model (it glows in its status colour).
+  // at + parent: a new device placed in Blender coordinates and carried by that part when it explodes.
+  const SENSORS = [
+    { id: 'IA', mods: ['current', 'current_sensor_health'], name: 'Current, phase A', where: 'CT on LV bushing u', unit: 'A', dev: 'IoT_CT_A', dec: 0 },
+    { id: 'IB', mods: ['current', 'current_sensor_health'], name: 'Current, phase B', where: 'CT on LV bushing v', unit: 'A', dev: 'IoT_CT_B', dec: 0 },
+    { id: 'IC', mods: ['current', 'current_sensor_health'], name: 'Current, phase C', where: 'CT on LV bushing w', unit: 'A', dev: 'IoT_CT_C', dec: 0 },
+    { id: 'VA', mods: ['voltage', 'voltage_sensor_health'], name: 'Voltage, phase A', where: 'Tap on LV bus bar u, in tank', unit: 'V', at: [-0.18, 0.205, 1.30], parent: 'LV_Lead_u', dec: 1 },
+    { id: 'VB', mods: ['voltage', 'voltage_sensor_health'], name: 'Voltage, phase B', where: 'Tap on LV bus bar v, in tank', unit: 'V', at: [0.07, 0.205, 1.30], parent: 'LV_Lead_v', dec: 1 },
+    { id: 'VC', mods: ['voltage', 'voltage_sensor_health'], name: 'Voltage, phase C', where: 'Tap on LV bus bar w, in tank', unit: 'V', at: [0.32, 0.205, 1.30], parent: 'LV_Lead_w', dec: 1 },
+    { id: 'OIL', mods: ['oil_level'], name: 'Oil level', where: 'Conservator magnetic oil gauge', unit: '%', dev: 'MOG_Oil_Level_Gauge', dec: 1 },
+    { id: 'TOP_OIL', mods: ['top_oil'], name: 'Top-oil temperature', where: 'Thermometer pocket on cover', unit: '°C', dev: 'IoT_TopOil_Temp', dec: 1 },
+    { id: 'TW_A', mods: ['winding'], name: 'Winding temperature A', where: 'Fibre-optic probe, top HV disc', unit: '°C', at: [-0.29, -0.16, 1.00], parent: 'HV_Winding_U', dec: 1, fibre: true },
+    { id: 'TW_B', mods: ['winding'], name: 'Winding temperature B', where: 'Fibre-optic probe, top HV disc', unit: '°C', at: [0.13, -0.16, 1.00], parent: 'HV_Winding_V', dec: 1, fibre: true },
+    { id: 'TW_C', mods: ['winding'], name: 'Winding temperature C', where: 'Fibre-optic probe, top HV disc', unit: '°C', at: [0.55, -0.16, 1.00], parent: 'HV_Winding_W', dec: 1, fibre: true },
+    { id: 'AMB', mods: ['top_oil', 'winding'], name: 'Ambient temperature', where: 'Shielded mast', unit: '°C', dev: 'IoT_Ambient_Temp', dec: 1 },
+    { id: 'REF', mods: ['current_sensor_health', 'voltage_sensor_health'], name: 'Reference meters', where: 'CT / VT reference inputs, marshalling box', unit: '% err', dev: 'Marshalling_Box', dec: 2 },
+  ];
+  for (const s of SENSORS) { s.v = null; s.s = 'NORMAL'; }
+  const fmt = s => s.v == null ? '–' : s.v.toFixed(s.dec) + ' ' + s.unit;
+
+  // module rows, in the order of the spec
+  const f1 = x => x == null ? '–' : x.toFixed(1), f2 = x => x == null ? '–' : x.toFixed(2);
+  const MODS = [
+    { id: 'current_sensor_health', metric: m => f2(m.metrics.e_max_pct) + '% err' },
+    { id: 'voltage_sensor_health', metric: m => f2(m.metrics.e_max_pct) + '% err' },
+    { id: 'current', metric: m => f1(m.metrics.loading_pct) + '% load' },
+    { id: 'voltage', metric: m => '±' + f1(m.metrics.d_max_pct) + '%' },
+    { id: 'oil_level', metric: m => f1(m.metrics.oil_pct) + '%' },
+    { id: 'top_oil', metric: m => f1(m.metrics.top_oil_c) + ' °C' },
+    { id: 'winding', metric: m => f1(m.metrics.t_hot_c) + ' °C' },
+  ];
+  const NAMES0 = { current_sensor_health: 'Current measurement health', voltage_sensor_health: 'Voltage measurement health', current: 'Current IoT', voltage: 'Voltage IoT', oil_level: 'Oil-level IoT', top_oil: 'Top-oil temperature IoT', winding: 'Winding temperature IoT' };
+  const modsEl = $('mods');
+  let focusMod = null;
+  MODS.forEach((M, i) => {
+    const r = document.createElement('div'); r.className = 'mod'; r.tabIndex = 0; r.dataset.s = 'NORMAL'; r.setAttribute('role', 'button'); r.setAttribute('aria-pressed', 'false');
+    r.innerHTML = '<span class="n"></span><span class="nm"><span></span><small></small></span><span class="r"><span class="pill"></span><span class="v"></span></span>';
+    r.querySelector('.n').textContent = i + 1;
+    r.querySelector('.nm span').textContent = NAMES0[M.id];
+    M.row = r; M.msg = r.querySelector('small'); M.pill = r.querySelector('.pill'); M.val = r.querySelector('.v');
+    M.pill.textContent = 'Normal';
+    const act = () => {
+      focusMod = focusMod === M.id ? null : M.id;
+      modsEl.querySelectorAll('.mod').forEach(x => x.setAttribute('aria-pressed', x === r && !!focusMod));
+      if (focusMod) { const s = SENSORS.find(x => x.mods[0] === M.id) || SENSORS.find(x => x.mods.includes(M.id)); if (s) flyTo(s); }
+    };
+    r.onclick = act;
+    r.onkeydown = e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); act(); } };
+    modsEl.append(r);
+  });
+
+  // readings table (measured, reference)
+  const readsEl = $('reads'), READ_IDS = E.SENSORS.dynamic;
+  readsEl.innerHTML = '<span class="h">Input</span><span class="h">Measured</span><span class="h">Reference</span>';
+  const readCells = {};
+  for (const id of READ_IDS) {
+    const b = document.createElement('b'); b.textContent = id;
+    const m = document.createElement('span'), rf = document.createElement('span');
+    readsEl.append(b, m, rf); readCells[id] = [m, rf];
+  }
+
+  // chips
+  const chipsEl = $('chips');
+  for (const s of SENSORS) {
+    const c = document.createElement('div'); c.className = 'chip'; c.dataset.s = 'NORMAL'; c.title = s.name + ' (' + s.where + ')';
+    c.innerHTML = '<b></b><span></span>'; c.querySelector('b').textContent = s.id;
+    c.onclick = () => flyTo(s);
+    s.chip = c; s.chipV = c.querySelector('span'); chipsEl.append(c);
+  }
+
+  // Draw one engine result (from the local engine or the backend).
+  const hEl = $('health'), hcard = $('hcard');
+  function render(out) {
+    const r = out.readings || {}, by = {};
+    for (const m of out.modules) by[m.id] = m;
+    for (const s of SENSORS) {
+      s.s = (out.sensors && out.sensors[s.id]) || 'NORMAL';
+      s.v = s.id === 'REF'
+        ? Math.max((by.current_sensor_health || {}).metrics?.e_max_pct || 0, (by.voltage_sensor_health || {}).metrics?.e_max_pct || 0)
+        : (r[s.id] == null ? s.v : r[s.id]);
+      s.chip.dataset.s = s.s; s.chipV.textContent = fmt(s);
+      paint(s);
+    }
+    for (const M of MODS) {
+      const m = by[M.id]; if (!m) continue;
+      M.row.dataset.s = m.status; M.pill.textContent = WORD[m.status] || m.status; M.val.textContent = M.metric(m);
+      let msg = m.message || '';
+      if (m.predicted_breach_s && M.id !== 'oil_level') msg += ' · limit in ' + E.fmtDur(m.predicted_breach_s);
+      M.msg.textContent = msg;
+    }
+    for (const id of READ_IDS) {
+      const [mc, rc] = readCells[id];
+      mc.textContent = r[id] == null ? '–' : r[id].toFixed(id[0] === 'I' ? 0 : 1);
+      rc.textContent = r[id + '_REF'] == null ? '' : r[id + '_REF'].toFixed(id[0] === 'I' ? 0 : 1);
+    }
+    const h = out.health, w = E.worst(out.modules.map(m => m.status));
+    if (h) {
+      hcard.dataset.s = hEl.dataset.s = w;
+      $('score').textContent = h.score;
+      $('prio').textContent = h.priority + ' · ' + h.priority_label;
+      $('action').textContent = h.action;
+      $('healthTxt').textContent = 'Health ' + h.score + ' · ' + h.priority + ' ' + h.priority_label;
+    }
+  }
+
+  const logEl = $('log');
+  function log(a, when) {
+    const empty = logEl.querySelector('.empty'); if (empty) empty.remove();
+    const li = document.createElement('li'); li.dataset.s = a.status;
+    const tm = new Date(when || Date.now()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    const b = document.createElement('b'); b.textContent = a.status === 'NORMAL' ? 'Cleared' : WORD[a.status];
+    li.append(tm + ' ', b, ' ' + (a.name || NAMES0[a.module] || a.module) + ': ' + (a.message || ''));
+    logEl.prepend(li);
+    while (logEl.children.length > 40) logEl.lastChild.remove();
+  }
+  function setRating(cfg) {
+    const T = cfg && cfg.transformer; if (!T) return;
+    $('rating').textContent = `${T.kva} kVA · ${T.hv_kv} / ${T.lv_kv} kV · Dyn11 · ONAN · rated LV ${T.i_rated_a} A`;
+  }
+
+  // ------------------------------------------------------------------ simulation (mirrors backend/app/mock.py)
+  // Keeps the true value of each quantity. Measured CT / VT readings add an instrument bias; the reference
+  // readings are the true value, so the two measurement-health modules can be exercised too.
+  const NORMAL = { IA: 585, IB: 562, IC: 604, VA: 249, VB: 251, VC: 248, OIL: 68, TOP_OIL: 62, TW_A: 66, TW_B: 69, TW_C: 67, AMB: 32,
+    BIAS_IA: 0, BIAS_IB: 0, BIAS_IC: 0, BIAS_VA: 0, BIAS_VB: 0, BIAS_VC: 0 };
+  const SCEN = {
+    normal: {},
+    overload: { IA: 880, IB: 866, IC: 905, TOP_OIL: 97, TW_A: 82, TW_B: 85, TW_C: 80, VA: 244, VB: 246, VC: 243 },
+    leak: { OIL: 8 },
+    sag: { VA: 236, VB: 222, VC: 243 },
+    ct_drift: { BIAS_IB: 0.035 },
+    vt_fault: { BIAS_VC: -0.04 },
+  };
+  const SCEN_NAME = { normal: 'normal', overload: 'overload', leak: 'oil leak', sag: 'voltage sag', ct_drift: 'CT drift', vt_fault: 'VT fault' };
+  const AUTO = [['normal', 8], ['overload', 30], ['normal', 15], ['leak', 30], ['normal', 12], ['sag', 12], ['normal', 8], ['ct_drift', 15], ['normal', 10]];
+  const RATE = { I: 0.25, V: 0.4, T: 0.04, B: 0.1, A: 0.02 }, NOISE = { I: 2, V: 0.4, T: 0.08, A: 0.05 };
+  const tru = Object.assign({}, NORMAL);
+  const eng = E.create();
+  let live = false, scen = 'normal', auto = !reduce, autoI = 0, autoLeft = AUTO[0][1], simT = 0, prevStatus = {};
+  setRating(eng.config);
+
+  function mockStep(dt) {
+    if (auto && (autoLeft -= dt) <= 0) { autoI = (autoI + 1) % AUTO.length; autoLeft = AUTO[autoI][1]; scen = AUTO[autoI][0]; }
+    const goal = Object.assign({}, NORMAL, SCEN[scen]), out = {};
+    for (const k in tru) {
+      const v = tru[k];
+      if (k === 'OIL' && goal[k] < v) { tru[k] = Math.max(goal[k], v - 0.8 * dt); continue; }   // leaks are linear, refills quick
+      const rate = k === 'OIL' ? 0.3 : RATE[k.startsWith('BIAS') ? 'B' : k[0] in RATE ? k[0] : 'T'];
+      tru[k] = v + (goal[k] - v) * (1 - Math.pow(1 - rate, dt / 0.5));
+    }
+    for (const k in tru) {
+      if (k.startsWith('BIAS')) continue;
+      const n = k === 'OIL' ? 0.05 : NOISE[k[0]] || NOISE.T;
+      let meas = tru[k] + (Math.random() - 0.5) * n;
+      if ((k[0] === 'I' || k[0] === 'V') && k.length === 2) {
+        out[k + '_REF'] = tru[k] * (1 + (Math.random() - 0.5) * 0.001);
+        meas = tru[k] * (1 + tru['BIAS_' + k]) + (Math.random() - 0.5) * n;
+      }
+      out[k] = meas;
+    }
+    return out;
+  }
+  function tick(dt) {
+    if (live) return;                 // live results arrive over the WebSocket
+    simT += dt;
+    const r = mockStep(dt);
+    let out = eng.update(simT, r);
+    if (TA) { TA.post(simT, r); out = TA.overlay(out); }
+    out.readings = r;
+    for (const m of out.modules) {
+      if (prevStatus[m.id] && prevStatus[m.id] !== m.status) log({ module: m.id, name: m.name, status: m.status, message: m.message });
+      prevStatus[m.id] = m.status;
+    }
+    render(out);
+    const apiTxt = TA ? TA.label() : '';
+    clock.textContent = 'simulated · ' + (auto ? 'auto demo: ' : '') + SCEN_NAME[scen] + (apiTxt ? ' · ' + apiTxt : '');
+  }
+
+  function pressScen() { const cur = live ? liveScen : auto ? 'auto' : scen; document.querySelectorAll('[data-scen]').forEach(b => b.setAttribute('aria-pressed', b.dataset.scen === cur)); }
+  document.querySelectorAll('[data-scen]').forEach(b => b.onclick = () => {
+    if (live) {
+      fetch(apiUrl('api/simulate'), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ scenario: b.dataset.scen }) })
+        .then(r => r.ok && r.json()).then(j => { if (j) { liveScen = j.scenario; pressScen(); } }).catch(() => {});
+      return;
+    }
+    if (b.dataset.scen === 'auto') { auto = true; autoI = 0; autoLeft = AUTO[0][1]; scen = AUTO[0][0]; }
+    else { auto = false; scen = b.dataset.scen; }
+    pressScen();
+  });
+
+  // ------------------------------------------------------------------ live backend
+  // When the page is served by the FastAPI backend (or opened with ?api=http://host:8000), the backend
+  // runs the engine and streams {type: "state"} results and {type: "alert"} status changes over a
+  // WebSocket. A page hosted on claude.ai cannot reach other servers, so it always simulates.
+  const clock = $('clock'), scenBox = document.querySelector('.scen');
+  let API = '';
+  try { API = new URLSearchParams(location.search).get('api') || ''; } catch (e) {}
+  const base = () => API ? API.replace(/\/?$/, '/') : location.href;
+  const apiUrl = p => new URL(p, base()).href;
+  let liveScen = null, lastMsg = 0, retry = 2000;
+  function openWs() {
+    const u = new URL('ws', base()); u.protocol = u.protocol === 'https:' ? 'wss:' : 'ws:';
+    let sock;
+    try { sock = new WebSocket(u.href); } catch (e) { return; }
+    sock.onmessage = ev => {
+      let m; try { m = JSON.parse(ev.data); } catch (e) { return; }
+      if (m.type === 'hello') {
+        live = true; auto = false; retry = 2000;
+        liveScen = m.mock ? m.scenario : null;
+        scenBox.hidden = !m.mock;
+        setRating(m.config);
+        logEl.innerHTML = '<li class="empty">No changes yet.</li>';
+        for (const a of m.alerts || []) log(a, a.ts * 1000);
+        pressScen();
+      } else if (m.type === 'state') {
+        lastMsg = Date.now(); render(m);
+      } else if (m.type === 'alert') {
+        log(m.alert, m.alert.ts * 1000);
+      }
+    };
+    sock.onclose = () => { if (live) { clock.textContent = 'connection lost, retrying'; setTimeout(openWs, retry); retry = Math.min(retry * 2, 15000); } };
+  }
+  // Digital Transformer Twin API (this repo's backend). The page is served by it at /twin/, so the API
+  // is the same origin; ?dtt=http://host:8000 points a page served elsewhere at it.
+  let dtt = '';
+  try { dtt = new URLSearchParams(location.search).get('dtt') || ''; } catch (e) {}
+  const TA = window.TwinApi && location.protocol !== 'file:' ? TwinApi.create({ base: dtt ? dtt.replace(/\/?$/, '/') : location.origin + '/' }) : null;
+  pressScen(); tick(0.5);
+  // The streaming backend from the twin's own starter (?api=...); the Digital Transformer Twin API at /twin/ has none.
+  if (API || !location.pathname.startsWith('/twin'))
+    fetch(apiUrl('api/health'), { cache: 'no-store' })
+      .then(r => r.ok ? r.json() : null).then(j => { if (j && j.ok === true) openWs(); }).catch(() => {});
+  setInterval(() => {
+    if (!live) return;
+    const age = (Date.now() - lastMsg) / 1000;
+    clock.textContent = !lastMsg ? 'live, waiting for data' : age > 10 ? 'live, no data for ' + Math.round(age) + ' s' : 'live' + (liveScen ? ' (mock data)' : '');
+  }, 1000);
+
+  // ------------------------------------------------------------------ 3D
+  if (!window.THREE || !THREE.GLTFLoader) { status.textContent = 'The 3D viewer could not load. The renders below still show the model.'; setInterval(() => tick(0.5), 500); return; }
+  const renderer = new THREE.WebGLRenderer({ antialias: true });
+  renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+  renderer.outputEncoding = THREE.sRGBEncoding;
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  renderer.toneMappingExposure = 0.9;
+  renderer.shadowMap.enabled = true;
+  renderer.localClippingEnabled = true;
+  stage.prepend(renderer.domElement);
+
+  const scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x0b0d0c);
+  const camera = new THREE.PerspectiveCamera(35, 16 / 10, 0.05, 100);
+  const controls = new THREE.OrbitControls(camera, renderer.domElement);
+  controls.enableDamping = true;
+  controls.autoRotateSpeed = 0.8;
+
+  if (THREE.RoomEnvironment) {   // reflections so copper and steel read as metal
+    const pmrem = new THREE.PMREMGenerator(renderer);
+    scene.environment = pmrem.fromScene(new THREE.RoomEnvironment(), 0.04).texture;
+  }
+  scene.add(new THREE.HemisphereLight(0xdfe8ff, 0x2a2622, 0.6));
+  const sun = new THREE.DirectionalLight(0xffffff, 1.6);
+  sun.shadow.bias = -0.0005; sun.shadow.normalBias = 0.02;
+  sun.position.set(4, 7, 6); sun.castShadow = true; sun.shadow.mapSize.set(2048, 2048);
+  Object.assign(sun.shadow.camera, { left: -3.5, right: 3.5, top: 5.5, bottom: -1.5, far: 30 });
+  scene.add(sun);
+  const fill = new THREE.DirectionalLight(0xffffff, 0.8); fill.position.set(-5, 4, -4); scene.add(fill);
+  const rim = new THREE.DirectionalLight(0xffe2c8, 0.5); rim.position.set(1, 3, -6); scene.add(rim);
+
+  const NAMES = [
+    ['Core_Limbs', 'Core limbs and bottom yoke', 'CRGO steel, 7-step section, Ø190 mm'],
+    ['Core_Top_Yoke', 'Core top yoke', 'Removed to slide the coils off the limbs'],
+    ['Core_Clamp', 'Core clamp', '100 × 50 mm steel channels'],
+    ['Core_Tie_Rods', 'Tie rods', '8 × M16, insulated sleeves'],
+    ['Core_Base', 'Base channels', '75 × 40 mm'],
+    ['LV_Winding', 'LV winding', 'Copper foil on pressboard tube'],
+    ['HV_LV_Barrier', 'HV-LV barrier', 'Pressboard cylinder and 12 wedges'],
+    ['HV_Winding', 'HV winding', '8 disc coils, paper-covered copper'],
+    ['End_Ring', 'End ring', 'Pressboard'],
+    ['HV_Lead', 'HV line lead', 'To HV bushing, crepe-paper insulated'],
+    ['HV_Delta', 'HV delta jumper', 'Dyn11 delta connection'],
+    ['HV_TapLead', 'Tapping lead', 'HV tap band to tap switch'],
+    ['OffCircuit_Tap_Switch', 'Off-circuit tap switch', 'Turned by the handle on the cover'],
+    ['Lead_Cleats', 'Lead cleats', 'Laminated wood'],
+    ['LV_Lead', 'LV bus bar', '40 × 8 mm copper'],
+    ['LV_Star', 'LV star connection', 'To the neutral'],
+    ['LV_Neutral', 'Neutral star bar', 'To the neutral bushing'],
+    ['Insulating_Oil', 'Insulating oil', 'Fills the tank'],
+    ['Tank', 'Tank', ''], ['Cover', 'Cover', ''], ['HV_Bushing', 'HV bushing', '11 kV porcelain'],
+    ['LV_Bushing', 'LV bushing', '0.433 kV'], ['Conservator', 'Conservator', 'Oil expansion tank'],
+    ['Buchholz', 'Buchholz relay', ''], ['Radiator', 'Panel radiator', 'ONAN cooling'],
+    ['Silica_Gel', 'Silica gel breather', ''], ['OffLoad_Tap', 'Tap changer handle', ''],
+    ['Marshalling', 'Marshalling box', 'OTI / WTI dials'], ['Digital_Twin', 'Digital twin gateway', 'Sends all sensor readings'],
+  ];
+  function describe(obj) {
+    for (let o = obj; o; o = o.parent) {
+      if (o.userData.sensor) { const s = o.userData.sensor; return [s.name, fmt(s) + ' · ' + WORD[s.s]]; }
+      const hit = o.name && NAMES.find(n => o.name.startsWith(n[0]));
+      if (hit) return [hit[1], hit[2]];
+    }
+    return null;
+  }
+
+  // Cutaway windows (three world: x, y up, z = -Blender y). Clipped where inside every plane.
+  const P = (x, y, z, c) => new THREE.Plane(new THREE.Vector3(x, y, z), c);
+  const tankCut = [P(0, 0, -1, 0.30), P(1, 0, 0, -0.64), P(-1, 0, 0, -0.64), P(0, -1, 0, 0.28), P(0, 1, 0, -1.36)];
+  const oilCut = [P(0, 0, -1, -0.12), P(1, 0, 0, -0.64), P(-1, 0, 0, -0.64), P(0, -1, 0, 0.28), P(0, 1, 0, -1.36)];
+
+  const parts = [];
+  let tank = [], oil = [], radL = [], radPucks = [], tAnim = null, t = 1, mode = 'xray', follow = true, fly = null;
+  const homes = {};
+  const ease = x => { x = Math.min(Math.max(x, 0), 1); return x * x * (3 - 2 * x); };
+  const slider = $('t'), tv = $('tv'), playBtn = $('play'), oilBox = $('oil'), lblBox = $('lbl');
+
+  function setT(v) {
+    t = v;
+    for (const p of parts) {
+      const pos = p.base.clone();
+      for (const [dx, dy, dz, t0, t1] of p.stages) {
+        const k = ease((t - t0) / (t1 - t0));
+        pos.x += dx * k; pos.y += dz * k; pos.z -= dy * k;
+      }
+      p.obj.position.copy(pos);
+    }
+    const pct = Math.round(t * 100);
+    slider.value = pct; tv.textContent = pct + '%';
+    playBtn.textContent = t > 0.5 ? 'Assemble' : 'Explode';
+    if (follow && homes.a) lerpHome(t);
+  }
+  function lerpHome(k) {
+    const e = ease(k);
+    controls.target.lerpVectors(homes.a.target, homes.e.target, e);
+    camera.position.lerpVectors(homes.a.pos, homes.e.pos, e);
+  }
+  function applyMode() {
+    const cut = mode === 'cut', xr = mode === 'xray', showOil = oilBox.checked && mode !== 'solid';
+    for (const m of tank) {
+      m.material.clippingPlanes = cut ? tankCut : null; m.material.clipIntersection = true;
+      m.material.transparent = xr; m.material.opacity = xr ? 0.16 : 1; m.material.depthWrite = !xr;
+      m.material.side = cut ? THREE.DoubleSide : THREE.FrontSide; m.material.needsUpdate = true;
+    }
+    for (const m of oil) {
+      m.visible = showOil;
+      m.material.clippingPlanes = cut ? oilCut : null; m.material.clipIntersection = true; m.material.needsUpdate = true;
+    }
+    for (const o of radL) {
+      o.visible = !cut;
+      o.material.transparent = xr; o.material.opacity = xr ? 0.12 : 1; o.material.depthWrite = !xr; o.material.needsUpdate = true;
+    }
+    for (const o of radPucks) o.visible = !cut;
+  }
+
+  // glow sprite texture
+  const glowTex = (() => {
+    const c = document.createElement('canvas'); c.width = c.height = 64;
+    const g = c.getContext('2d'), gr = g.createRadialGradient(32, 32, 0, 32, 32, 32);
+    gr.addColorStop(0, 'rgba(255,255,255,1)'); gr.addColorStop(0.25, 'rgba(255,255,255,.65)'); gr.addColorStop(1, 'rgba(255,255,255,0)');
+    g.fillStyle = gr; g.fillRect(0, 0, 64, 64);
+    return new THREE.CanvasTexture(c);
+  })();
+  const housing = new THREE.MeshStandardMaterial({ color: 0xdfe3e6, roughness: 0.4 });
+
+  // build the 3D side of every sensor once the model is in its assembled pose
+  function attachSensors(root) {
+    const byName = n => root.getObjectByName(n);
+    root.updateMatrixWorld(true);
+    for (const s of SENSORS) {
+      let parent, world;
+      if (s.dev) {
+        parent = byName(s.dev);
+        world = new THREE.Box3().setFromObject(parent).getCenter(new THREE.Vector3());
+        s.mats = [];
+        parent.traverse(o => { if (o.isMesh) { o.material = o.material.clone(); s.mats.push(o.material); } });
+        if (/^IoT_CT_/.test(s.dev)) {   // light up the CT core ring too
+          byName(s.dev + '_Core').traverse(o => { if (o.isMesh) { o.material = o.material.clone(); s.mats.push(o.material); } });
+        }
+      } else {
+        parent = byName(s.parent);
+        world = B(...s.at);
+      }
+      if (!parent) continue;
+      const g = new THREE.Group();
+      g.position.copy(parent.worldToLocal(world.clone()));
+      g.userData.sensor = s;
+      if (!s.dev) {   // a small sensor module with a state-coloured band
+        const box = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.045, 0.035), housing);
+        const band = new THREE.Mesh(new THREE.BoxGeometry(0.062, 0.012, 0.037),
+          new THREE.MeshStandardMaterial({ color: 0x222222, emissive: 0x34d399, emissiveIntensity: 2 }));
+        band.position.y = -0.012;
+        s.mats = [band.material];
+        g.add(box, band);
+        box.userData.sensor = band.userData.sensor = s;
+        if (s.fibre) {   // fibre running up to the cover
+          const f = new THREE.Mesh(new THREE.CylinderGeometry(0.0025, 0.0025, 0.32, 6), new THREE.MeshStandardMaterial({ color: 0x3d8bff, emissive: 0x1a4aa0 }));
+          f.position.y = 0.18; g.add(f);
+        }
+      }
+      const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex, color: COL.NORMAL, transparent: true, opacity: 0.9, depthTest: false, depthWrite: false }));
+      sp.scale.setScalar(0.09); sp.renderOrder = 20; sp.raycast = () => {};
+      g.add(sp); s.glow = sp; s.anchor = g;
+      parent.add(g);
+    }
+  }
+  function paint(s) {
+    if (!s.glow) return;
+    const c = new THREE.Color(COL[s.s]);
+    s.glow.material.color.copy(c);
+    for (const m of s.mats) { m.emissive.copy(c); m.emissiveIntensity = s.s === 'NORMAL' ? 0.45 : 1.3; }
+  }
+
+  function onError() { status.textContent = 'The 3D model could not load. The renders below still show it.'; }
+  fetch('transformer.glb').then(r => { if (!r.ok) throw 0; return r.arrayBuffer(); })
+    .catch(() => fetch('transformer-glb.txt').then(r => { if (!r.ok) throw 0; return r.text(); }).then(b64 => {
+      const bin = atob(b64.trim()), buf = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) buf[i] = bin.charCodeAt(i);
+      return buf.buffer;
+    }))
+    .then(buf => new THREE.GLTFLoader().parse(buf, '', onLoad, onError)).catch(onError);
+
+  function onLoad(gltf) {
+    const root = gltf.scene;
+    root.traverse(o => {
+      if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; o.material.envMapIntensity = o.material.metalness > 0.5 ? 0.7 : 0.3; }
+      if (o.userData && o.userData.explode) parts.push({ obj: o, base: o.position.clone(), stages: JSON.parse(o.userData.explode) });
+    });
+    root.traverse(o => {
+      if (!o.isMesh) return;
+      const nm = (o.name || '') + '|' + (o.parent ? o.parent.name : '');
+      if (/(^|\|)Tank(\||_?\d*$)/.test(nm)) { o.material = o.material.clone(); tank.push(o); }
+      if (/Insulating_Oil/.test(nm)) { o.material = o.material.clone(); o.castShadow = false; o.renderOrder = 2; oil.push(o); }
+      if (/Radiator_Left/.test(nm)) { o.material = o.material.clone(); radL.push(o); }
+      if (/IoT_RAD_/.test(nm)) radPucks.push(o);
+    });
+    scene.add(root);
+
+    function home(k) {
+      setT(k);
+      root.updateMatrixWorld(true);
+      const box = new THREE.Box3().setFromObject(root), c = box.getCenter(new THREE.Vector3()), s = box.getSize(new THREE.Vector3());
+      const r = Math.max(s.x, s.y, s.z), f = k ? 1.3 : 1.05;
+      return { target: c.clone(), pos: c.clone().add(new THREE.Vector3(r * 0.95 * f, r * 0.42 * f, r * 1.15 * f)), r };
+    }
+    follow = false;
+    homes.e = home(1); homes.a = home(0);
+    attachSensors(root);      // assembled pose (t = 0)
+    for (const s of SENSORS) paint(s);
+    controls.minDistance = 0.4; controls.maxDistance = homes.e.r * 4;
+    follow = true;
+    applyMode();
+    setT(1);
+    status.remove();
+    if (!reduce) setTimeout(() => { if (follow && t === 1) animateTo(0, 3200); }, 900); else setT(0);
+  }
+
+  function animateTo(goal, ms) {
+    const from = t, t0 = performance.now();
+    if (reduce) { setT(goal); return; }
+    tAnim = now => { const k = Math.min((now - t0) / ms, 1); setT(from + (goal - from) * k); if (k >= 1) tAnim = null; };
+  }
+  let focusSensor = null, focusUntil = 0;
+  function flyTo(s) {
+    if (!s.anchor) return;
+    const p = s.anchor.getWorldPosition(new THREE.Vector3());
+    const dir = camera.position.clone().sub(controls.target).normalize();
+    const from = { t: controls.target.clone(), c: camera.position.clone() }, t0 = performance.now();
+    const to = { t: p, c: p.clone().add(dir.multiplyScalar(2.0)) };
+    follow = false; focusSensor = s; focusUntil = performance.now() + 2600;
+    if (reduce) { controls.target.copy(to.t); camera.position.copy(to.c); return; }
+    fly = now => { const k = ease((now - t0) / 900); controls.target.lerpVectors(from.t, to.t, k); camera.position.lerpVectors(from.c, to.c, k); if (k >= 1) fly = null; };
+  }
+
+  slider.addEventListener('input', () => { tAnim = null; setT(slider.value / 100); });
+  playBtn.onclick = () => { follow = true; animateTo(t > 0.5 ? 0 : 1, 2800); };
+  oilBox.onchange = applyMode;
+  lblBox.onchange = () => { chipsEl.hidden = !lblBox.checked; };
+  document.querySelectorAll('input[name=mode]').forEach(r => r.onchange = () => { mode = r.value; applyMode(); });
+  controls.addEventListener('start', () => { follow = false; fly = null; });
+
+  function size() { const w = stage.clientWidth, h = stage.clientHeight; renderer.setSize(w, h, false); camera.aspect = w / h; camera.updateProjectionMatrix(); }
+  new ResizeObserver(size).observe(stage); size();
+
+  // hover
+  const tip = $('tip'), ray = new THREE.Raycaster(), mouse = new THREE.Vector2();
+  let hoverEvt = null;
+  renderer.domElement.addEventListener('pointermove', e => { hoverEvt = e; });
+  renderer.domElement.addEventListener('pointerleave', () => { hoverEvt = null; tip.hidden = true; });
+  function hover() {
+    if (!hoverEvt) return;
+    const e = hoverEvt; hoverEvt = null;
+    const rc = renderer.domElement.getBoundingClientRect();
+    mouse.set(((e.clientX - rc.left) / rc.width) * 2 - 1, -((e.clientY - rc.top) / rc.height) * 2 + 1);
+    ray.setFromCamera(mouse, camera);
+    const hits = ray.intersectObjects(scene.children, true).filter(h => {
+      if (!h.object.visible || oil.includes(h.object)) return false;
+      for (let o = h.object; o; o = o.parent) if (!o.visible) return false;
+      if (mode === 'xray' && tank.includes(h.object)) return false;
+      const cp = h.object.material && h.object.material.clippingPlanes;
+      return !(cp && cp.every(p => p.distanceToPoint(h.point) < 0));
+    });
+    const n = hits.length ? describe(hits[0].object) : null;
+    if (!n) { tip.hidden = true; return; }
+    tip.innerHTML = '';
+    const b = document.createElement('b'); b.textContent = n[0]; tip.append(b);
+    if (n[1]) { const s = document.createElement('span'); s.textContent = n[1]; tip.append(s); }
+    tip.style.left = (e.clientX - rc.left) + 'px'; tip.style.top = (e.clientY - rc.top) + 'px';
+    tip.hidden = false;
+  }
+
+  // per-frame chip placement and glow pulse
+  const v3 = new THREE.Vector3();
+  function placeChips(now) {
+    const w = stage.clientWidth, h = stage.clientHeight;
+    for (const s of SENSORS) {
+      if (!s.anchor) { s.chip.style.display = 'none'; continue; }
+      let vis = true;
+      for (let o = s.anchor.parent; o; o = o.parent) if (!o.visible) { vis = false; break; }
+      if (vis && mode === 'cut' && s.dev && /IoT_RAD_/.test(s.dev)) vis = false;
+      s.anchor.getWorldPosition(v3).project(camera);
+      if (!vis || v3.z > 1 || Math.abs(v3.x) > 1.05 || Math.abs(v3.y) > 1.05) { s.chip.style.display = 'none'; s.glow.visible = vis; continue; }
+      s.glow.visible = true;
+      s.chip.style.display = '';
+      s.chip.style.transform = `translate(${(v3.x * 0.5 + 0.5) * w}px, ${(-v3.y * 0.5 + 0.5) * h}px) translate(-50%, calc(-100% - 10px))`;
+      const dim = focusMod && !s.mods.includes(focusMod);
+      s.chip.classList.toggle('dim', !!dim);
+      s.chip.classList.toggle('focus', focusSensor === s && now < focusUntil);
+      const pulse = s.s === 'CRITICAL' && !reduce ? 1 + 0.45 * Math.sin(now / 160) : s.s === 'NORMAL' ? 1 : 1.15;
+      s.glow.scale.setScalar((dim ? 0.05 : 0.09) * pulse);
+      s.glow.material.opacity = dim ? 0.2 : 0.9;
+    }
+  }
+
+  let last = performance.now(), acc = 0;
+  (function loop(now) {
+    requestAnimationFrame(loop);
+    now = now || performance.now();
+    const dt = Math.min((now - last) / 1000, 0.5); last = now; acc += dt;
+    if (acc >= 0.5) { tick(acc); acc = 0; }
+    if (tAnim) tAnim(now);
+    if (fly) fly(now);
+    hover();
+    controls.update();
+    renderer.render(scene, camera);
+    placeChips(now);
+  })();
+
+  const spin = $('spin');
+  spin.onclick = () => { controls.autoRotate = !controls.autoRotate; spin.textContent = controls.autoRotate ? 'Pause spin' : 'Spin'; };
+  $('reset').onclick = () => { follow = true; fly = null; if (homes.a) lerpHome(t); };
+})();
+</script>
+
+</html>

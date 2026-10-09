@@ -4,16 +4,20 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, RedirectResponse
+from fastapi.staticfiles import StaticFiles
 from sqlalchemy.exc import OperationalError, SQLAlchemyError
 
 from app.api import alerts, data, health, simulation, transformers
-from app.config.settings import Settings, get_settings
+from app.config.settings import PROJECT_ROOT, Settings, get_settings
 from app.database.db import DatabaseNotConfigured, get_engine
 from app.services.errors import BadRequest, PayloadTooLarge, ResourceNotFound
 from app.simulation.simulator import SimulationManager
 
 logger = logging.getLogger(__name__)
+
+# 3D digital-twin page; it calls the REST API from the same origin.
+FRONTEND_DIR = PROJECT_ROOT / "frontend"
 
 
 @asynccontextmanager
@@ -44,6 +48,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     for router in (health.router, data.router, alerts.router, transformers.router, simulation.router):
         application.include_router(router, prefix=settings.api_v1_prefix)
+
+    if FRONTEND_DIR.is_dir():
+        @application.get("/twin", include_in_schema=False)
+        def twin_redirect():
+            return RedirectResponse("/twin/")
+
+        application.mount("/twin/", StaticFiles(directory=FRONTEND_DIR, html=True), name="twin")
 
     async def not_found(request: Request, exc: ResourceNotFound):
         return JSONResponse(status_code=404, content={"detail": str(exc)})

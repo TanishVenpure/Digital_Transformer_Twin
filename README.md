@@ -8,7 +8,45 @@ Reading ingestion/storage, database-backed history, alert acknowledgement/resolu
 CSV preview, and in-memory simulation controls are implemented. The approved per-reading rules are **3-Phase Current Instrument Error** and
 **3-Phase Voltage Instrument Error**, producing configurable SYSTEM_MAINTENANCE
 alerts through the same pipeline and common history. No other physical rules, synthetic sensor values,
-health scores, frontend, AI agent, or maintenance scheduling are implemented.
+health scores, AI agent, or maintenance scheduling are implemented in the backend;
+the 3D frontend is described below.
+
+## 3D digital twin (frontend)
+
+`frontend/` holds the 3D transformer page. The API serves it at
+[http://127.0.0.1:8000/twin/](http://127.0.0.1:8000/twin/), so no second server is needed.
+
+- The model is a 500 kVA oil-immersed distribution transformer (`frontend/transformer.glb`)
+  with internals, explode/assemble, cutaway and X-ray views, and 13 IoT sensor markers.
+- The page simulates readings (Auto demo, Normal, Overload, Oil leak, Voltage sag, CT drift, VT fault).
+  Every 2 s it posts the latest reading to `POST /api/v1/data/reading` through the normal
+  ProcessingService pipeline, so readings and alerts land in PostgreSQL like real data.
+- The API's rule results colour the matching modules and sensors, marked "checked by API":
+  `3_phase_current_instrument_error` (module 1), `3_phase_voltage_instrument_error` (module 2) and
+  `oil_level_predictive_maintenance` (module 5). The other four modules (loading, voltage deviation,
+  top-oil and winding temperature) still run in `frontend/engine.js` until rules exist for them here.
+- Each phase is sent as a percentage of its own reference meter (`rated_current` / `reference_voltage`
+  = 100), so the single-reference formula gives the per-phase error. Raw readings (IA, VA_REF, OIL,
+  ...) are stored alongside in the same JSON.
+- Readings are time-stamped on a demo clock where one simulated second is one minute, so the oil
+  trend develops over hours.
+- three.js 0.147.0 is vendored in `frontend/vendor/three/` (MIT), so the page works offline.
+
+The production `config/thresholds.yaml` leaves the oil thresholds null, so the oil rule is SKIPPED.
+For the demo, point `THRESHOLDS_FILE` at `config/thresholds.demo.yaml` (minimum 20 %, warning 35 %,
+lead time 0.5 h, from the twin's IoT design, not a nameplate). Rules 1 and 2 are unchanged there.
+
+```powershell
+# in .env (or the environment)
+THRESHOLDS_FILE=config/thresholds.demo.yaml
+.\.venv\Scripts\python.exe -m alembic upgrade head
+.\.venv\Scripts\python.exe -m uvicorn app.main:app --reload
+# open http://127.0.0.1:8000/twin/
+```
+
+Without `DATABASE_URL` the page still runs and says "database not configured, page rules only".
+Opened from another server, add `?dtt=http://127.0.0.1:8000` to the page URL (DEBUG=true allows the CORS).
+`tests/test_frontend.py` checks the page, model and threshold switch.
 
 ## Architecture
 

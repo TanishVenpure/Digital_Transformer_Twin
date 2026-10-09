@@ -5,7 +5,7 @@ import yaml
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.alerts.types import MaintenanceType
-from app.config.settings import PROJECT_ROOT
+from app.config.settings import get_settings
 
 
 class ThresholdRule(BaseModel):
@@ -44,7 +44,7 @@ class OilThresholdRule(BaseModel):
 
 
 def load_thresholds(path: Path | None = None) -> dict[str, ThresholdRule | OilThresholdRule]:
-    with (path or PROJECT_ROOT / "config" / "thresholds.yaml").open(encoding="utf-8") as stream:
+    with (path or get_settings().thresholds_file).open(encoding="utf-8") as stream:
         config = yaml.safe_load(stream)
     if not isinstance(config, dict) or not isinstance(config.get("formulas"), dict):
         raise ValueError("Threshold configuration requires a formulas mapping")
