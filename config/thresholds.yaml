@@ -1,0 +1,9 @@
+# No transformer thresholds are configured.
+# Future format:
+# formulas:
+#   formula_name:
+#     operator: ">"
+#     warning: <value>
+#     critical: <value>
+# Supported operators: >, >=, <, <=
+formulas: {}
