@@ -1,0 +1,29 @@
+# Input validation for every feature used by the seven IoTs.
+# A value must be a finite number within [min, max]; anything else is rejected
+# (dropped from the reading) so the affected IoT reports SKIPPED, never a fault.
+# Ranges are physical-plausibility bounds, NOT alarm thresholds.
+readings:
+  expected_interval_hours: 1      # data arrives hourly
+features:
+  # IOT1 / IOT3: current, A
+  current_r:            {min: 0, max: 2500, unit: A}
+  current_y:            {min: 0, max: 2500, unit: A}
+  current_b:            {min: 0, max: 2500, unit: A}
+  reference_current_r:  {min: 0, max: 2500, unit: A}
+  reference_current_y:  {min: 0, max: 2500, unit: A}
+  reference_current_b:  {min: 0, max: 2500, unit: A}
+  # IOT2 / IOT4: phase voltage, V
+  voltage_r:            {min: 0, max: 400, unit: V}
+  voltage_y:            {min: 0, max: 400, unit: V}
+  voltage_b:            {min: 0, max: 400, unit: V}
+  reference_voltage_r:  {min: 0, max: 400, unit: V}
+  reference_voltage_y:  {min: 0, max: 400, unit: V}
+  reference_voltage_b:  {min: 0, max: 400, unit: V}
+  # IOT5: oil level, percent of gauge
+  oil_level:            {min: 0, max: 100, unit: percent_of_gauge}
+  # IOT6 / IOT7: temperatures, degC
+  top_oil_temperature:  {min: -40, max: 150, unit: degC}
+  ambient_temperature:  {min: -40, max: 60, unit: degC}
+  winding_temperature_r: {min: -40, max: 200, unit: degC}
+  winding_temperature_y: {min: -40, max: 200, unit: degC}
+  winding_temperature_b: {min: -40, max: 200, unit: degC}

@@ -1,0 +1,27 @@
+# Recommended maintenance check per IoT and signal, written into the maintenance sheet.
+# Placeholder wording until the team's maintenance procedures are supplied.
+actions:
+  current_measurement_health:
+    MAINTENANCE_REQUIRED: "Inspect and recalibrate the current sensor (CT) against a reference meter."
+  voltage_measurement_health:
+    MAINTENANCE_REQUIRED: "Inspect and recalibrate the voltage sensor (PT) against a reference meter."
+  current_loading:
+    WARNING: "Review loading; plan load transfer if current keeps approaching rated value."
+    PREDICTED_MAINTENANCE: "Schedule load management before current reaches rated value."
+    CRITICAL: "Reduce load immediately; inspect transformer for overload damage."
+  voltage_deviation:
+    WARNING: "Check tap position and supply voltage regulation."
+    PREDICTED_MAINTENANCE: "Schedule tap-changer / regulation check before the voltage band is breached."
+    CRITICAL: "Inspect tap changer and supply; isolate if voltage stays outside limits."
+  oil_level:
+    WARNING: "Inspect for oil leaks and plan an oil top-up."
+    PREDICTED_MAINTENANCE: "Schedule leak repair and oil top-up before minimum level is reached."
+    CRITICAL: "Top up oil and repair leak immediately; check Buchholz relay."
+  top_oil_temperature:
+    WARNING: "Check cooling (fans, radiators) and loading."
+    PREDICTED_MAINTENANCE: "Schedule cooling-system check before the trip temperature is reached."
+    CRITICAL: "Reduce load and inspect cooling system; transformer at trip temperature."
+  winding_temperature:
+    WARNING: "Check cooling and loading; review winding temperature trend."
+    PREDICTED_MAINTENANCE: "Schedule thermal inspection before winding rise limit is reached."
+    CRITICAL: "Reduce load immediately; inspect windings and insulation for overheating."

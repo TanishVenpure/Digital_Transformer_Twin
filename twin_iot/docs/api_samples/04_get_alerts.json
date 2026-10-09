@@ -1,0 +1,98 @@
+{
+  "request": {
+    "method": "GET",
+    "path": "/api/alerts/SAMPLE?limit=10"
+  },
+  "response": [
+    {
+      "ts": "2026-10-09T15:00:00+00:00",
+      "iot_slot": 1,
+      "signal": "MAINTENANCE_REQUIRED",
+      "value": 2.137767220902613,
+      "threshold": 1.0,
+      "comparison_operator": ">",
+      "unit": "percent",
+      "message": "Current sensor error exceeds the permitted accuracy; current sensor maintenance required."
+    },
+    {
+      "ts": "2026-10-09T15:00:00+00:00",
+      "iot_slot": 3,
+      "signal": "WARNING",
+      "value": 102.25921521997623,
+      "threshold": 90.0,
+      "comparison_operator": ">=",
+      "unit": "percent_of_rated",
+      "message": "Transformer current is approaching rated current."
+    },
+    {
+      "ts": "2026-10-09T15:00:00+00:00",
+      "iot_slot": 3,
+      "signal": "CRITICAL",
+      "value": 102.25921521997623,
+      "threshold": 100.0,
+      "comparison_operator": ">=",
+      "unit": "percent_of_rated",
+      "message": "Transformer current reached or exceeded rated current."
+    },
+    {
+      "ts": "2026-10-09T15:00:00+00:00",
+      "iot_slot": 5,
+      "signal": "PREDICTED_MAINTENANCE",
+      "value": 2.3333333333333335,
+      "threshold": 72.0,
+      "comparison_operator": "<=",
+      "unit": "hours",
+      "message": "Oil level is predicted to reach the minimum level within the maintenance lead time."
+    },
+    {
+      "ts": "2026-10-09T15:00:00+00:00",
+      "iot_slot": 6,
+      "signal": "WARNING",
+      "value": 107.0,
+      "threshold": 95.0,
+      "comparison_operator": ">=",
+      "unit": "degC",
+      "message": "Top-oil temperature reached the alarm setting."
+    },
+    {
+      "ts": "2026-10-09T15:00:00+00:00",
+      "iot_slot": 6,
+      "signal": "WARNING",
+      "value": 75.0,
+      "threshold": 40.0,
+      "comparison_operator": ">",
+      "unit": "K",
+      "message": "Top-oil temperature rise over ambient exceeds the permitted rise."
+    },
+    {
+      "ts": "2026-10-09T15:00:00+00:00",
+      "iot_slot": 6,
+      "signal": "CRITICAL",
+      "value": 107.0,
+      "threshold": 105.0,
+      "comparison_operator": ">=",
+      "unit": "degC",
+      "message": "Top-oil temperature reached the trip setting."
+    },
+    {
+      "ts": "2026-10-09T15:00:00+00:00",
+      "iot_slot": 7,
+      "signal": "CRITICAL",
+      "value": 47.0,
+      "threshold": 45.0,
+      "comparison_operator": ">",
+      "unit": "K_rise_over_ambient",
+      "message": "Winding temperature rise exceeds the permitted rise."
+    },
+    {
+      "ts": "2026-10-09T15:00:00+00:00",
+      "iot_slot": 7,
+      "signal": "WARNING",
+      "value": 47.0,
+      "threshold": 40.0,
+      "comparison_operator": ">",
+      "unit": "K_rise_over_ambient",
+      "message": "Winding temperature rise is approaching the permitted rise."
+    }
+  ]
+}

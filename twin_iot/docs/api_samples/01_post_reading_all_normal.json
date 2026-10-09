@@ -1,0 +1,118 @@
+{
+  "request": {
+    "method": "POST",
+    "path": "/api/readings",
+    "body": {
+      "transformer_id": "SAMPLE",
+      "timestamp": "2026-10-09T14:00:00Z",
+      "data": {
+        "current_r": 600.0,
+        "current_y": 610.0,
+        "current_b": 605.0,
+        "reference_current_r": 600.0,
+        "reference_current_y": 610.0,
+        "reference_current_b": 605.0,
+        "voltage_r": 250.0,
+        "voltage_y": 251.0,
+        "voltage_b": 249.0,
+        "reference_voltage_r": 250.0,
+        "reference_voltage_y": 251.0,
+        "reference_voltage_b": 249.0,
+        "oil_level": 70.0,
+        "top_oil_temperature": 70.0,
+        "ambient_temperature": 32.0,
+        "winding_temperature_r": 66.0,
+        "winding_temperature_y": 67.0,
+        "winding_temperature_b": 65.0
+      }
+    }
+  },
+  "response": {
+    "reading_id": 8606,
+    "accepted": true,
+    "issues": [],
+    "iots": [
+      {
+        "slot": 1,
+        "status": "NORMAL",
+        "value": 0.0,
+        "signals": [
+          "NORMAL"
+        ]
+      },
+      {
+        "slot": 2,
+        "status": "NORMAL",
+        "value": 0.0,
+        "signals": [
+          "NORMAL"
+        ]
+      },
+      {
+        "slot": 3,
+        "status": "NORMAL",
+        "value": 72.53269916765755,
+        "signals": [
+          "NORMAL"
+        ]
+      },
+      {
+        "slot": 4,
+        "status": "NORMAL",
+        "value": 0.4,
+        "signals": [
+          "NORMAL"
+        ]
+      },
+      {
+        "slot": 5,
+        "status": "NORMAL",
+        "value": 70.0,
+        "signals": [
+          "NORMAL"
+        ]
+      },
+      {
+        "slot": 6,
+        "status": "NORMAL",
+        "value": 70.0,
+        "signals": [
+          "NORMAL"
+        ]
+      },
+      {
+        "slot": 7,
+        "status": "NORMAL",
+        "value": 35.0,
+        "signals": [
+          "NORMAL"
+        ]
+      }
+    ],
+    "model": {
+      "model_id": "base",
+      "label": "Base transformer",
+      "iot_slot": null,
+      "signal": null,
+      "signalling": []
+    },
+    "model_call": {
+      "action": "switch_model",
+      "status": "PENDING_BLENDER",
+      "called_at": "2026-10-09T14:37:26.110272+00:00",
+      "model_id": "base",
+      "previous_model": "iot6",
+      "model": {
+        "label": "Base transformer",
+        "blend_file": "models/transformer.blend",
+        "export_file": "dashboard/transformer.glb",
+        "focus_nodes": [],
+        "iot_slot": null
+      },
+      "iot_slot": null,
+      "signal": null,
+      "source": "live",
+      "reading_time": "2026-10-09T14:00:00+00:00"
+    }
+  }
+}

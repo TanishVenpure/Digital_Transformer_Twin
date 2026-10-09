@@ -1,0 +1,69 @@
+{
+  "request": {
+    "method": "GET",
+    "path": "/api/twin3d/state?calls=3"
+  },
+  "response": {
+    "current_model": "base",
+    "recent_calls": [
+      {
+        "action": "switch_model",
+        "status": "PENDING_BLENDER",
+        "called_at": "2026-10-09T14:37:26.216940+00:00",
+        "model_id": "base",
+        "previous_model": "iot3",
+        "model": {
+          "label": "Base transformer",
+          "blend_file": "models/transformer.blend",
+          "export_file": "dashboard/transformer.glb",
+          "focus_nodes": [],
+          "iot_slot": null
+        },
+        "iot_slot": null,
+        "signal": null,
+        "source": "live",
+        "reading_time": "2026-10-09T16:00:00+00:00"
+      },
+      {
+        "action": "switch_model",
+        "status": "PENDING_BLENDER",
+        "called_at": "2026-10-09T14:37:26.170964+00:00",
+        "model_id": "iot3",
+        "previous_model": "base",
+        "model": {
+          "label": "Current overload",
+          "blend_file": "models/transformer.blend",
+          "export_file": "dashboard/transformer.glb",
+          "focus_nodes": [
+            "IoT_CT_A",
+            "IoT_CT_B",
+            "IoT_CT_C"
+          ],
+          "iot_slot": 3
+        },
+        "iot_slot": 3,
+        "signal": "CRITICAL",
+        "source": "live",
+        "reading_time": "2026-10-09T15:00:00+00:00"
+      },
+      {
+        "action": "switch_model",
+        "status": "PENDING_BLENDER",
+        "called_at": "2026-10-09T14:37:26.110272+00:00",
+        "model_id": "base",
+        "previous_model": "iot6",
+        "model": {
+          "label": "Base transformer",
+          "blend_file": "models/transformer.blend",
+          "export_file": "dashboard/transformer.glb",
+          "focus_nodes": [],
+          "iot_slot": null
+        },
+        "iot_slot": null,
+        "signal": null,
+        "source": "live",
+        "reading_time": "2026-10-09T14:00:00+00:00"
+      }
+    ]
+  }
+}

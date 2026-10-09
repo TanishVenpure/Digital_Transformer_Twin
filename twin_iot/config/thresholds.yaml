@@ -1,0 +1,97 @@
+# One rule per IoT, in dashboard order (iot_slot 1..7 = IOT1..IOT7).
+# operator: ">"/">=" means higher is worse, "<"/"<=" means lower is worse.
+# warning/critical use the same operator. A null limit disables that check.
+# lead_time_hours: raise PREDICTED_MAINTENANCE when the trend reaches the
+# critical limit within this many hours. Null disables prediction.
+#
+# Values marked EXAMPLE are prototype placeholders. Replace them with the
+# actual transformer nameplate / manufacturer specification.
+formulas:
+  current_measurement_health:
+    iot_slot: 1
+    operator: ">"
+    unit: percent
+    critical: 1.0              # max permitted instrument error (agreed acceptance Test 1)
+    breach_signal: MAINTENANCE_REQUIRED
+    maintenance_type: SYSTEM_MAINTENANCE
+    critical_message: "Current sensor error exceeds the permitted accuracy; current sensor maintenance required."
+
+  voltage_measurement_health:
+    iot_slot: 2
+    operator: ">"
+    unit: percent
+    critical: 1.0              # max permitted instrument error (agreed acceptance Test 1)
+    breach_signal: MAINTENANCE_REQUIRED
+    maintenance_type: SYSTEM_MAINTENANCE
+    critical_message: "Voltage sensor error exceeds the permitted accuracy; voltage sensor maintenance required."
+
+  current_loading:
+    iot_slot: 3
+    operator: ">="
+    unit: percent_of_rated
+    warning: 90.0              # EXAMPLE warning limit
+    critical: 100.0            # rated current
+    lead_time_hours: 24.0      # EXAMPLE
+    maintenance_type: TRANSFORMER_MAINTENANCE
+    warning_message: "Transformer current is approaching rated current."
+    critical_message: "Transformer current reached or exceeded rated current."
+    predicted_message: "Transformer current is predicted to exceed rated current within the lead time."
+    parameters:
+      rated_current: 841.0     # A, LV side of the 630 kVA example transformer
+
+  voltage_deviation:
+    iot_slot: 4
+    operator: ">="
+    unit: percent_deviation
+    warning: 5.0               # +/-5 % prototype
+    critical: 10.0             # +/-10 % prototype
+    lead_time_hours: 24.0      # EXAMPLE
+    maintenance_type: TRANSFORMER_MAINTENANCE
+    warning_message: "Phase voltage deviates more than the warning band from nominal."
+    critical_message: "Phase voltage deviates more than the critical band from nominal."
+    predicted_message: "Voltage deviation is predicted to breach the critical band within the lead time."
+    parameters:
+      nominal_voltage: 250.0   # V, EXAMPLE: phase-to-neutral of 433 V LV; match what the sensors measure
+
+  oil_level:
+    iot_slot: 5
+    operator: "<="
+    unit: percent_of_gauge
+    warning: 40.0              # EXAMPLE warning oil level
+    critical: 20.0             # EXAMPLE minimum permissible oil level
+    lead_time_hours: 72.0      # EXAMPLE maintenance lead time
+    maintenance_type: TRANSFORMER_MAINTENANCE
+    warning_message: "Oil level crossed the warning level."
+    critical_message: "Oil level reached the minimum permissible level."
+    predicted_message: "Oil level is predicted to reach the minimum level within the maintenance lead time."
+
+  top_oil_temperature:
+    iot_slot: 6
+    operator: ">="
+    unit: degC
+    warning: 95.0              # example alarm (CPRI reference)
+    critical: 105.0            # example trip (CPRI reference)
+    lead_time_hours: 6.0       # EXAMPLE
+    maintenance_type: TRANSFORMER_MAINTENANCE
+    warning_message: "Top-oil temperature reached the alarm setting."
+    critical_message: "Top-oil temperature reached the trip setting."
+    predicted_message: "Top-oil temperature is predicted to reach the trip setting within the lead time."
+    extra_checks:
+      - detail: top_oil_rise
+        operator: ">"
+        threshold: 40.0        # top-oil rise limit over ambient (CPRI reference)
+        unit: K
+        signal: WARNING
+        message: "Top-oil temperature rise over ambient exceeds the permitted rise."
+
+  winding_temperature:
+    iot_slot: 7
+    operator: ">"
+    unit: K_rise_over_ambient
+    warning: 40.0              # EXAMPLE warning rise
+    critical: 45.0             # max winding rise (CPRI reference)
+    lead_time_hours: 6.0       # EXAMPLE
+    maintenance_type: TRANSFORMER_MAINTENANCE
+    warning_message: "Winding temperature rise is approaching the permitted rise."
+    critical_message: "Winding temperature rise exceeds the permitted rise."
+    predicted_message: "Winding temperature rise is predicted to exceed the permitted rise within the lead time."

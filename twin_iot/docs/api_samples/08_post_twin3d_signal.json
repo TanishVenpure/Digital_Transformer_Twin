@@ -1,0 +1,63 @@
+{
+  "request": {
+    "method": "POST",
+    "path": "/api/twin3d/signal",
+    "body": {
+      "reading_id": 8607,
+      "source": "timeline"
+    }
+  },
+  "response": {
+    "model": {
+      "model_id": "iot3",
+      "label": "Current overload",
+      "iot_slot": 3,
+      "signal": "CRITICAL",
+      "signalling": [
+        [
+          3,
+          "CRITICAL"
+        ],
+        [
+          6,
+          "CRITICAL"
+        ],
+        [
+          7,
+          "CRITICAL"
+        ],
+        [
+          1,
+          "MAINTENANCE_REQUIRED"
+        ],
+        [
+          5,
+          "PREDICTED_MAINTENANCE"
+        ]
+      ]
+    },
+    "switched": true,
+    "model_call": {
+      "action": "switch_model",
+      "status": "PENDING_BLENDER",
+      "called_at": "2026-10-09T14:37:26.375611+00:00",
+      "model_id": "iot3",
+      "previous_model": "base",
+      "model": {
+        "label": "Current overload",
+        "blend_file": "models/transformer.blend",
+        "export_file": "dashboard/transformer.glb",
+        "focus_nodes": [
+          "IoT_CT_A",
+          "IoT_CT_B",
+          "IoT_CT_C"
+        ],
+        "iot_slot": 3
+      },
+      "iot_slot": 3,
+      "signal": "CRITICAL",
+      "source": "timeline",
+      "reading_time": "2026-10-09T15:00:00+00:00"
+    }
+  }
+}

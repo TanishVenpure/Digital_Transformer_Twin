@@ -1,0 +1,56 @@
+# 3D twin models: 1 base view + 1 signalled view per IoT, all on one Blender model.
+# Model: dashboard/transformer.glb (from the team's FRONTEND branch, built in Blender).
+# base  = whole transformer, sensors coloured by status.
+# iotN  = camera focused on that IoT's sensor devices (focus_nodes = glTF node names),
+#         which glow in the signal colour while the rest dim (dashboard/twin3d.js).
+# FastAPI picks the view: base while every IoT is NORMAL (or not evaluated); otherwise
+# the IoT whose status is in trigger_signals with the worst signal, then the lowest slot.
+trigger_signals: [WARNING, PREDICTED_MAINTENANCE, MAINTENANCE_REQUIRED, CRITICAL]
+models:
+  base:
+    label: Base transformer
+    blend_file: models/transformer.blend   # source scene (bpy export pending)
+    export_file: dashboard/transformer.glb
+    focus_nodes: []
+  iot1:
+    iot_slot: 1
+    label: Current sensor fault
+    blend_file: models/transformer.blend   # source scene (bpy export pending)
+    export_file: dashboard/transformer.glb
+    focus_nodes: [IoT_CT_A, IoT_CT_B, IoT_CT_C, Marshalling_Box]
+  iot2:
+    iot_slot: 2
+    label: Voltage sensor fault
+    blend_file: models/transformer.blend   # source scene (bpy export pending)
+    export_file: dashboard/transformer.glb
+    focus_nodes: [LV_Lead_u, LV_Lead_v, LV_Lead_w, Marshalling_Box]
+  iot3:
+    iot_slot: 3
+    label: Current overload
+    blend_file: models/transformer.blend   # source scene (bpy export pending)
+    export_file: dashboard/transformer.glb
+    focus_nodes: [IoT_CT_A, IoT_CT_B, IoT_CT_C]
+  iot4:
+    iot_slot: 4
+    label: Voltage deviation
+    blend_file: models/transformer.blend   # source scene (bpy export pending)
+    export_file: dashboard/transformer.glb
+    focus_nodes: [LV_Lead_u, LV_Lead_v, LV_Lead_w]
+  iot5:
+    iot_slot: 5
+    label: Low oil level
+    blend_file: models/transformer.blend   # source scene (bpy export pending)
+    export_file: dashboard/transformer.glb
+    focus_nodes: [MOG_Oil_Level_Gauge]
+  iot6:
+    iot_slot: 6
+    label: Top-oil overheating
+    blend_file: models/transformer.blend   # source scene (bpy export pending)
+    export_file: dashboard/transformer.glb
+    focus_nodes: [IoT_TopOil_Temp, IoT_Ambient_Temp]
+  iot7:
+    iot_slot: 7
+    label: Winding overheating
+    blend_file: models/transformer.blend   # source scene (bpy export pending)
+    export_file: dashboard/transformer.glb
+    focus_nodes: [HV_Winding_U, HV_Winding_V, HV_Winding_W, IoT_Ambient_Temp]

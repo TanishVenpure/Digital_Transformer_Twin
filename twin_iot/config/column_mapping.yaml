@@ -1,0 +1,8 @@
+# Dataset-specific column renames: ExternalColumnName: internal_name
+# Internal feature names used by the IoTs:
+#   current_r/y/b, reference_current_r/y/b
+#   voltage_r/y/b, reference_voltage_r/y/b
+#   oil_level, top_oil_temperature, ambient_temperature
+#   winding_temperature_r/y/b
+# Phases follow R/Y/B (= A/B/C).
+mappings: {}
