@@ -12,7 +12,10 @@ def test_every_monitor_degrades_to_critical_and_is_repaired():
     seen = {slot: set() for slot in range(1, 8)}
     for timestamp, data in readings:
         for e in service.process("T1", timestamp, data).evaluations.values():
-            seen[e.iot_slot].add(e.status)
+            if e.iot_slot == 8:
+                assert e.evaluation_status == "SKIPPED" and not e.alerts
+            else:
+                seen[e.iot_slot].add(e.status)
     assert all(repairs[name] for name in MONITORS if name not in ("current", "voltage", "winding")), repairs
     assert repairs["winding"] == []   # cooling-duct fault needs an internal inspection; not repaired in the window
     assert repairs["current"] == []   # load follows demand; it is managed, never "repaired"

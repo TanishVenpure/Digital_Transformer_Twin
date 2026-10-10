@@ -33,6 +33,7 @@
   function healthOf(s, v, iot) {
     if (v == null || !iot) return null;
     const ref = REFERENCE[s], crit = iot.critical;
+    if (ref == null || crit == null || crit === ref) return null;
     const h = iot.operator.startsWith('>') ? (100 * (crit - v)) / (crit - ref) : (100 * (v - crit)) / (ref - crit);
     return Math.max(-60, Math.min(100, h));
   }
@@ -54,6 +55,10 @@
 
     function open(s) {
       slot = s; hoverX = null;
+      if (REFERENCE[s] == null) view = "value";
+      const healthButton = document.querySelector('[data-view="health"]');
+      if (healthButton) healthButton.disabled = REFERENCE[s] == null;
+      press('#metric-view [data-view]', 'view', view);
       overlay.hidden = false;
       document.body.style.overflow = 'hidden';
       update(true);
@@ -148,7 +153,8 @@
       const pill = document.getElementById('metric-status');
       pill.className = 'pill s-' + (last.s || 'NONE');
       pill.textContent = last.s ? LABEL[last.s] : 'No data';
-      document.getElementById('metric-sub').textContent = m.metric + ' · window ends ' + new Date(w.tEnd).toISOString().slice(0, 16).replace('T', ' ') + ' UTC';
+      const metricLabel = slot === 8 ? 'Measured oil pressure · unit: ' + w.iot.unit : m.metric;
+      document.getElementById('metric-sub').textContent = metricLabel + ' · window ends ' + new Date(w.tEnd).toISOString().slice(0, 16).replace('T', ' ') + ' UTC';
       stats(w, m);
       banner(w);
       draw(w, m);
@@ -163,12 +169,15 @@
       const [num, unit] = last.v == null ? ['—', ''] : m.fmt(last.v);
       const lastRepair = w.repairs.length ? w.repairs[w.repairs.length - 1].ts.slice(0, 10) : null;
       const tiles = [
-        ['Health now', last.h == null ? '—' : Math.round(last.h) + '%', 'as-new = 100%, critical = 0%'],
+        ...(slot === 8 ? [['Pressure rate', w.now.d?.[8]?.pressure_rate == null ? '—' : w.now.d[8].pressure_rate.toFixed(3), w.now.d?.[8]?.pressure_rate_unit || 'source units/hour']] :
+          [['Health now', last.h == null ? '—' : Math.round(last.h) + '%', 'as-new = 100%, critical = 0%']]),
         ['Measured', num + unit, w.iot.unit.replaceAll('_', ' ')],
-        ['Time healthy', healthy == null ? '—' : healthy + '%', 'of hours in window'],
+        ...(slot === 8 ? [['Pressure condition', (w.now.d?.[8]?.absolute_pressure_condition || 'Unconfigured').replaceAll('_', ' '), 'configured absolute limits']] :
+          [['Time healthy', healthy == null ? '—' : healthy + '%', 'of hours in window']]),
         ['Checks raised', String(w.checks.length), 'threshold hits in window'],
         ['Maintenance done', String(w.repairs.length), lastRepair ? 'last ' + lastRepair : 'none in window'],
-        ['Time to critical', last.ttc == null ? '—' : last.ttc < 48 ? Math.round(last.ttc) + ' h' : (last.ttc / 24).toFixed(1) + ' d', 'from current trend'],
+        ...(slot === 8 ? [['Rate condition', (w.now.d?.[8]?.rapid_pressure_condition || 'Unavailable').replaceAll('_', ' '), 'configured rate limit']] :
+          [['Time to critical', last.ttc == null ? '—' : last.ttc < 48 ? Math.round(last.ttc) + ' h' : (last.ttc / 24).toFixed(1) + ' d', 'from current trend']]),
       ];
       document.getElementById('metric-stats').innerHTML = tiles.map(([k, v, s]) =>
         `<div class="stat"><span>${k}</span><b>${v}</b><small>${s}</small></div>`).join('');
@@ -280,7 +289,11 @@
       const iot = w.iot;
       const limits = [];
       if (iot.warning != null) limits.push({ name: 'Warning', status: 'WARNING', value: health ? healthOf(slot, iot.warning, iot) : iot.warning });
-      limits.push({ name: 'Critical', status: 'CRITICAL', value: health ? 0 : iot.critical });
+      if (iot.critical != null) limits.push({ name: 'Critical', status: 'CRITICAL', value: health ? 0 : iot.critical });
+      if (!w.pts.some(p => p[key] != null) && !limits.length) {
+        el('text', { x: W / 2, y: H / 2, 'text-anchor': 'middle', fill: '#aab4c0' }, svg).textContent = 'No pressure data in this window';
+        return;
+      }
 
       const vals = w.pts.map((p) => p[key]).filter((v) => v != null);
       let lo, hi;
@@ -299,11 +312,12 @@
       const g = el('g', {}, svg);
 
       // zones: between warning and critical, and beyond critical (light status tints)
-      const critY = Y(limits[limits.length - 1].value);
+      const criticalLimit = limits.find(l => l.status === 'CRITICAL');
+      const critY = criticalLimit ? Y(criticalLimit.value) : null;
       const warnLimit = limits.find((l) => l.status === 'WARNING');
       const edgeBad = M.t + PH;   // the bad side is always at the bottom now
-      el('rect', { x: M.l, width: PW, y: Math.min(critY, edgeBad), height: Math.abs(edgeBad - critY), fill: COLOR.CRITICAL, opacity: 0.07 }, g);
-      if (warnLimit) {
+      if (critY != null) el('rect', { x: M.l, width: PW, y: Math.min(critY, edgeBad), height: Math.abs(edgeBad - critY), fill: COLOR.CRITICAL, opacity: 0.07 }, g);
+      if (warnLimit && critY != null) {
         const wy = Y(warnLimit.value);
         el('rect', { x: M.l, width: PW, y: Math.min(wy, critY), height: Math.abs(critY - wy), fill: COLOR.WARNING, opacity: 0.06 }, g);
       }

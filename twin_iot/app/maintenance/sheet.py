@@ -22,6 +22,7 @@ SHEET_FIELDS = (
     "check_no", "transformer_id", "date", "time_utc", "opened_at", "iot", "iot_name", "signal", "flag",
     "previous_status", "measured_value", "threshold", "comparison", "unit", "maintenance_type",
     "recommended_action", "status", "resolved_at", "duration_hours", "reading_id", "text",
+    "formula_name", "formula_inputs", "details", "trigger_conditions",
 )
 
 
@@ -138,12 +139,12 @@ def add_trend_flags(
 
 
 def iot_names(thresholds) -> dict[int, tuple[str, str, str]]:
-    return {rule.iot_slot: (name, formula_registry.get(name).display_name, rule.unit)
+    return {rule.iot_slot: (name, formula_registry.get(name).display_name, rule.unit or "unconfigured")
             for name, rule in thresholds.items()}
 
 
 def as_row(check: dict[str, Any]) -> dict[str, Any]:
-    return {field: (check[field].isoformat() if isinstance(check[field], datetime) else check[field])
+    return {field: (check[field].isoformat() if isinstance(check.get(field), datetime) else check.get(field))
             for field in SHEET_FIELDS}
 
 

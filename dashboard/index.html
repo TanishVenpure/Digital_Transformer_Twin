@@ -516,7 +516,7 @@
   const LABEL = { NORMAL: "Normal", WARNING: "Warning", PREDICTED_MAINTENANCE: "Predicted", MAINTENANCE_REQUIRED: "Maintenance", CRITICAL: "Critical" };
   const RANK = { NORMAL: 0, WARNING: 1, PREDICTED_MAINTENANCE: 2, MAINTENANCE_REQUIRED: 3, CRITICAL: 4 };
   const COLOR = { NORMAL: "#3fb950", WARNING: "#d29922", PREDICTED_MAINTENANCE: "#a371f7", MAINTENANCE_REQUIRED: "#f0883e", CRITICAL: "#f85149" };
-  // Monitor names and maintenance groups, by slot (1..7).
+  // Monitor names and maintenance groups, by slot (1..8).
   const MONITORS = {
     1: { name: "Current Sensor", metric: "Instrument error vs reference", group: "precision", fmt: (v) => [v.toFixed(2), "%"] },
     2: { name: "Voltage Sensor", metric: "Instrument error vs reference", group: "precision", fmt: (v) => [v.toFixed(2), "%"] },
@@ -525,6 +525,7 @@
     5: { name: "Oil Level", metric: "Conservator gauge", group: "transformer", fmt: (v) => [v.toFixed(1), "%"] },
     6: { name: "Top-Oil Temperature", metric: "Top-oil, absolute", group: "transformer", fmt: (v) => [v.toFixed(1), "°C"] },
     7: { name: "Winding Temperature", metric: "Hottest phase rise over ambient", group: "transformer", fmt: (v) => [v.toFixed(1), "K"] },
+    8: { name: "Transformer Pressure", metric: "Measured oil pressure · unit unconfigured", group: "transformer", fmt: (v) => [v.toFixed(2), ""] },
   };
   // Trend flags from the backend's analytics (shown when the timeline response carries them).
   const TREND_FLAGS = {
@@ -657,7 +658,13 @@
     state.data.iots.forEach((iot, i) => {
       const el = $(`iot-${iot.slot}`), value = frame.v[i], m = MONITORS[iot.slot];
       const [num, unit] = value == null ? ["—", ""] : m.fmt(value);
-      el.querySelector(".value").textContent = `${num}${unit}`;
+      el.querySelector(".value").textContent = `${num}${iot.slot === 8 && iot.unit !== "unconfigured" ? " " + iot.unit : unit}`;
+      if (iot.slot === 8) {
+        const d = frame.d?.[8];
+        el.querySelector(".sub").textContent = value == null ? "No pressure data" :
+          `Unit: ${iot.unit} · rate: ${d?.pressure_rate == null ? "unavailable" : d.pressure_rate.toFixed(3) + " " + (d.pressure_rate_unit || "source units/hour")}`;
+      }
+      el.querySelector(".brow").hidden = iot.slot === 8;
       // health: 100% as new, 0% at the critical limit
       const health = window.MetricChart ? MetricChart.healthOf(iot.slot, value, iot) : null;
       el.querySelector(".bar > span").style.width = health == null ? "0" : `${Math.max(2, health)}%`;

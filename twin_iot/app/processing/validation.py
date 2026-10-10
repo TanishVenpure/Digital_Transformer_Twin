@@ -31,13 +31,13 @@ class ValidationIssue(BaseModel):
 
 class FeatureRule(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    min: float = Field(allow_inf_nan=False)
-    max: float = Field(allow_inf_nan=False)
+    min: float | None = Field(default=None, allow_inf_nan=False)
+    max: float | None = Field(default=None, allow_inf_nan=False)
     unit: str = Field(min_length=1)
 
     @model_validator(mode="after")
     def ordered(self):
-        if self.min > self.max:
+        if self.min is not None and self.max is not None and self.min > self.max:
             raise ValueError("min must not exceed max")
         return self
 
@@ -78,10 +78,11 @@ def validate_values(data: dict[str, Any], config: ValidationConfig) -> tuple[dic
             issues.append(ValidationIssue(feature=feature, code=IssueCode.NOT_FINITE, value=str(raw),
                                           message=f"{feature} is not finite"))
             continue
-        if not rule.min <= number <= rule.max:
+        if ((rule.min is not None and number < rule.min)
+                or (rule.max is not None and number > rule.max)):
             issues.append(ValidationIssue(
                 feature=feature, code=IssueCode.OUT_OF_RANGE, value=number,
-                message=f"{feature}={number:g} {rule.unit} outside [{rule.min:g}, {rule.max:g}]",
+                message=f"{feature}={number:g} {rule.unit} outside [{rule.min}, {rule.max}]",
             ))
             continue
         clean[feature] = number

@@ -14,7 +14,7 @@ DEMO = Path(__file__).resolve().parents[1] / "data" / "examples" / "escalation_d
 
 def test_every_iot_has_a_unique_slot(thresholds):
     assert set(thresholds) == set(formula_registry.all())
-    assert sorted(rule.iot_slot for rule in thresholds.values()) == list(range(1, 8))
+    assert sorted(rule.iot_slot for rule in thresholds.values()) == list(range(1, 9))
 
 
 def test_warning_beyond_critical_is_rejected():
@@ -56,7 +56,9 @@ def test_demo_csv_ends_with_every_transformer_iot_critical():
     readings = list(read_csv(DEMO))
     results = ProcessingService(load_thresholds()).replay(readings)
     assert all(r.accepted and all(i.code == "MISSING" for i in r.issues) for r in results)
-    assert all(e.status == "NORMAL" for e in results[0].evaluations.values())
+    assert all(e.status == "NORMAL" for name, e in results[0].evaluations.items()
+               if name != "transformer_pressure_monitoring")
+    assert all(r.evaluations["transformer_pressure_monitoring"].evaluation_status == "SKIPPED" for r in results)
     final = results[-1].evaluations
     for name in ("current_loading", "voltage_deviation", "oil_level", "top_oil_temperature", "winding_temperature"):
         assert final[name].status == "CRITICAL"

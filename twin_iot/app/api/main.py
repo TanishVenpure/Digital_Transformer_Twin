@@ -29,7 +29,7 @@ DASHBOARD_DIR = Path(os.environ.get("TWIN_DASHBOARD_DIR", PROJECT_ROOT.parent / 
 HOURS_PER_SECOND = 24  # timeline tick: one day of hourly data per second at 1x
 
 app = FastAPI(title="Transformer Twin IoT API", version="0.1.0")
-live_service = ProcessingService()
+live_service = ProcessingService(history_loader=db.load_previous_valid_reading, timestamp_loader=db.load_last_timestamp)
 models = load_models()
 bridge = BlenderBridge(models)
 actions = load_actions()
@@ -59,7 +59,7 @@ def list_transformers() -> list[dict]:
 def list_iots() -> list[dict]:
     return [
         {"slot": rule.iot_slot, "name": name, "display_name": formula_registry.get(name).display_name,
-         "unit": rule.unit, "operator": rule.operator, "warning": rule.warning, "critical": rule.critical}
+         "unit": rule.unit or "unconfigured", "operator": rule.operator, "warning": rule.warning, "critical": rule.critical}
         for name, rule in sorted(live_service.thresholds.items(), key=lambda item: item[1].iot_slot)
     ]
 
@@ -75,10 +75,15 @@ def timeline(transformer_id: str) -> dict[str, Any]:
     if not rows:
         raise HTTPException(404, f"No readings for {transformer_id}")
     frames = []
+    slots = [iot["slot"] for iot in list_iots()]
     for reading_id, ts, model_id, issues, evaluations in rows:
+        by_slot = {e[0]: e for e in evaluations}
         frames.append({
             "id": reading_id, "t": ts.isoformat(), "m": model_id,
-            "s": [e[1] for e in evaluations], "v": [e[2] for e in evaluations], "ttc": [e[3] for e in evaluations],
+            "s": [by_slot[s][1] if s in by_slot else None for s in slots],
+            "v": [by_slot[s][2] if s in by_slot else None for s in slots],
+            "ttc": [by_slot[s][3] if s in by_slot else None for s in slots],
+            "d": {str(e[0]): e[4] for e in evaluations if len(e) > 4 and e[4]},
             "q": [[i["feature"], i["code"]] for i in issues],
         })
     return {
@@ -192,7 +197,8 @@ def ingest(reading: ReadingIn) -> dict[str, Any]:
     return {
         "reading_id": reading_id, "accepted": processed.accepted,
         "issues": [i.model_dump(mode="json") for i in processed.issues],
-        "iots": [{"slot": e.iot_slot, "status": e.status, "value": e.value, "signals": e.signals}
+        "iots": [{"slot": e.iot_slot, "status": e.status, "value": e.value, "signals": e.signals,
+                  "evaluation_status": e.evaluation_status, "unit": e.unit, "details": e.details}
                  for e in sorted(processed.evaluations.values(), key=lambda e: e.iot_slot)],
         "model": selection.model_dump(mode="json"), "model_call": call,
     }
@@ -214,8 +220,10 @@ async def upload(file: UploadFile = File(...), transformer_id: str = Form("T1"),
             raise HTTPException(400, f"Could not read CSV (needs a 'timestamp' column in ISO format): {exc}")
     finally:
         path.unlink(missing_ok=True)
-    service, issues, stored, rejected = ProcessingService(), Counter(), 0, 0
+    service, issues, stored, rejected = ProcessingService(history_loader=db.load_previous_valid_reading), Counter(), 0, 0
     with db.connect() as connection:
+        # Share this transaction so replacement/append history sees the same stored rows.
+        service.history_loader = lambda source, name, before: db.previous_valid_reading(connection, source, name, before)
         if replace:
             for transformer in {r[0] for r in readings}:
                 db.clear_transformer(connection, transformer)

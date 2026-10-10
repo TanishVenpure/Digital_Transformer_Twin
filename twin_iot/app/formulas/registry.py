@@ -21,16 +21,17 @@ class FormulaRegistry:
         return self._formulas.copy()
 
 
-# The seven physical-monitoring IoTs, registered in dashboard order IOT1..IOT7.
+# The eight physical-monitoring IoTs, registered in dashboard order IOT1..IOT8.
 formula_registry = FormulaRegistry()
 
 from app.formulas.measurement_health import CurrentMeasurementHealth, VoltageMeasurementHealth
 from app.formulas.electrical import CurrentLoading, VoltageDeviation
 from app.formulas.oil_level import OilLevel
+from app.formulas.pressure import TransformerPressureMonitoring
 from app.formulas.thermal import TopOilTemperature, WindingTemperature
 
 for _formula in (
     CurrentMeasurementHealth(), VoltageMeasurementHealth(), CurrentLoading(), VoltageDeviation(),
-    OilLevel(), TopOilTemperature(), WindingTemperature(),
+    OilLevel(), TopOilTemperature(), WindingTemperature(), TransformerPressureMonitoring(),
 ):
     formula_registry.register(_formula)

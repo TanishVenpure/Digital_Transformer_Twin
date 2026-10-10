@@ -6,6 +6,7 @@ import psycopg2
 from psycopg2.extras import Json, execute_values
 
 from app.services.processing_service import ProcessedReading
+from app.formulas.context import HistoricalReading
 from app.twin3d.selector import ModelSelection
 
 # Local dev cluster on port 5434 (trust auth on localhost only); override with env var.
@@ -164,7 +165,7 @@ def timeline(connection, transformer_id: str) -> list[tuple]:
     with connection.cursor() as cursor:
         cursor.execute("""
             SELECT r.id, r.ts, r.model_id, r.issues,
-                   json_agg(json_build_array(e.iot_slot, e.status, e.value, e.time_to_critical_hours)
+                   json_agg(json_build_array(e.iot_slot, e.status, e.value, e.time_to_critical_hours, e.details)
                             ORDER BY e.iot_slot)
             FROM readings r JOIN iot_evaluations e ON e.reading_id = r.id
             WHERE r.transformer_id = %s
@@ -359,7 +360,23 @@ def maintenance_sheet(connection, transformer_id: str, *, until=None, iot: int |
     for row in rows:
         for key in ("opened_at", "resolved_at"):
             row[key] = row[key].isoformat() if row[key] is not None else None
-    return [{field: row[field] for field in SHEET_FIELDS} for row in rows]
+    # Query linked diagnostics in one batch; old maintenance records remain untouched.
+    if rows:
+        from app.formulas.registry import formula_registry
+        with connection.cursor() as cursor:
+            cursor.execute("""SELECT e.reading_id, e.iot_slot, e.formula_name, e.details, r.clean_data
+                              FROM iot_evaluations e JOIN readings r ON r.id = e.reading_id
+                              WHERE e.reading_id = ANY(%s)""", ([r["reading_id"] for r in rows],))
+            contexts = {(rid, slot): (name, details, data) for rid, slot, name, details, data in cursor.fetchall()}
+        for row in rows:
+            context = contexts.get((row["reading_id"], row["iot"]))
+            if context:
+                name, details, data = context
+                formula = formula_registry.get(name)
+                row.update(formula_name=name, details=details,
+                           trigger_conditions=details.get("trigger_conditions", []),
+                           formula_inputs={key: data[key] for key in formula.required_features + formula.optional_features if key in data})
+    return [{field: row.get(field) for field in SHEET_FIELDS} for row in rows]
 
 
 def store_events(connection, rows: list[tuple]) -> None:
@@ -378,9 +395,51 @@ def maintenance_events(connection, transformer_id: str) -> list[dict]:
 
 
 def recent_alerts(connection, transformer_id: str, limit: int = 50) -> list[dict]:
+    from app.formulas.registry import formula_registry
     with connection.cursor() as cursor:
-        cursor.execute("""SELECT ts, iot_slot, signal, value, threshold, comparison_operator, unit, message
-                          FROM alerts WHERE transformer_id = %s ORDER BY ts DESC, iot_slot LIMIT %s""",
+        cursor.execute("""SELECT a.id, a.reading_id, a.ts, a.iot_slot, a.signal, a.value, a.threshold,
+                          a.comparison_operator, a.unit, a.message, a.maintenance_type,
+                          e.formula_name, e.details, r.clean_data
+                          FROM alerts a JOIN readings r ON r.id = a.reading_id
+                          JOIN iot_evaluations e ON e.reading_id = a.reading_id AND e.iot_slot = a.iot_slot
+                          WHERE a.transformer_id = %s ORDER BY a.ts DESC, a.iot_slot, a.id LIMIT %s""",
                        (transformer_id, limit))
         columns = [c.name for c in cursor.description]
-        return [{**dict(zip(columns, r)), "ts": r[0].isoformat()} for r in cursor.fetchall()]
+        rows = [dict(zip(columns, row)) for row in cursor.fetchall()]
+    for row in rows:
+        row["ts"] = row["ts"].isoformat()
+        formula = formula_registry.get(row["formula_name"])
+        row["parameter"] = formula.parameter
+        row["display_name"] = formula.display_name
+        clean = row.pop("clean_data")
+        row["formula_inputs"] = {key: clean[key] for key in formula.required_features + formula.optional_features if key in clean}
+        for trigger in row["details"].get("threshold_triggers", []):
+            if all(row.get(key) == trigger.get(key) for key in
+                   ("signal", "value", "threshold", "comparison_operator", "unit")):
+                row["trigger_condition"] = trigger["trigger_condition"]
+                break
+    return rows
+
+
+def previous_valid_reading(connection, transformer_id: str, formula_name: str, before) -> HistoricalReading | None:
+    """Latest successful prior formula observation, isolated by source and formula identity."""
+    with connection.cursor() as cursor:
+        cursor.execute("""SELECT r.ts, r.clean_data, r.id, e.unit
+                          FROM readings r JOIN iot_evaluations e ON e.reading_id = r.id
+                          WHERE r.transformer_id = %s AND e.formula_name = %s AND r.ts < %s
+                            AND e.evaluation_status IN ('CALCULATED', 'PASS', 'FLAGGED')
+                            AND e.value IS NOT NULL
+                          ORDER BY r.ts DESC LIMIT 1""", (transformer_id, formula_name, before))
+        row = cursor.fetchone()
+    return HistoricalReading(row[0], row[1], row[2], row[3]) if row else None
+
+
+def load_previous_valid_reading(transformer_id: str, formula_name: str, before):
+    with connect() as connection:
+        return previous_valid_reading(connection, transformer_id, formula_name, before)
+
+
+def load_last_timestamp(transformer_id: str):
+    with connect() as connection, connection.cursor() as cursor:
+        cursor.execute("SELECT max(ts) FROM readings WHERE transformer_id = %s", (transformer_id,))
+        return cursor.fetchone()[0]

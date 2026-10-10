@@ -30,3 +30,8 @@ actions:
     PREDICTED_MAINTENANCE: "Schedule thermal inspection before winding rise limit is reached."
     CRITICAL: "Reduce load immediately; inspect windings and insulation for overheating."
     WINDING_EXCESS_HEATING: "Winding is hotter than its load explains: check oil condition and DGA (CO, CO2, furans), inspect winding cooling ducts and oil flow for blockage or sludge, and limit peak loading until the cause is found."
+
+  transformer_pressure_monitoring:
+    WARNING: "Inspect the measured transformer pressure and pressure instrumentation."
+    CRITICAL: "Investigate the critical pressure or rapid pressure rise condition."
+    MAINTENANCE_REQUIRED: "Investigate the critical pressure or rapid pressure rise condition."

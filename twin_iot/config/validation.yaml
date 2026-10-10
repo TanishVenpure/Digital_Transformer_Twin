@@ -1,4 +1,4 @@
-# Input validation for every feature used by the seven IoTs.
+# Input validation for every feature used by the eight IoTs.
 # A value must be a finite number within [min, max]; anything else is rejected
 # (dropped from the reading) so the affected IoT reports SKIPPED, never a fault.
 # Ranges are physical-plausibility bounds, NOT alarm thresholds.
@@ -27,3 +27,6 @@ features:
   winding_temperature_r: {min: -40, max: 200, unit: degC}
   winding_temperature_y: {min: -40, max: 200, unit: degC}
   winding_temperature_b: {min: -40, max: 200, unit: degC}
+
+  # IOT8: finite measured pressure; physical unit and bounds are not yet supplied.
+  oil_pressure: {min: null, max: null, unit: unconfigured}

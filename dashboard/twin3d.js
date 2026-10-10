@@ -3,7 +3,7 @@
  *
  * Model, sensor placement and lighting come from the team's FRONTEND branch
  * (frontend/index.html + transformer.glb, built in Blender). Here the sensors are driven by
- * the seven IoT statuses of the current timeline hour instead of the page's own simulation.
+ * the IoT statuses of the current timeline hour instead of the page's own simulation.
  *
  *   base model      : every sensor shown in its status colour, camera on the whole transformer
  *   IoT n signalled : the camera flies to IoT n's sensors, they glow in the signal colour and

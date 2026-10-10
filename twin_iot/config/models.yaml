@@ -54,3 +54,10 @@ models:
     blend_file: models/transformer.blend   # source scene (bpy export pending)
     export_file: dashboard/transformer.glb
     focus_nodes: [HV_Winding_U, HV_Winding_V, HV_Winding_W, IoT_Ambient_Temp]
+
+  iot8:
+    iot_slot: 8
+    label: Transformer pressure condition (sensor mapping unresolved)
+    blend_file: models/transformer.blend
+    export_file: dashboard/transformer.glb
+    focus_nodes: []  # no verified pressure sensor mapping; use the whole transformer

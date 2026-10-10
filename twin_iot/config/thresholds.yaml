@@ -98,3 +98,33 @@ formulas:
     warning_message: "Winding temperature rise is approaching the permitted rise."
     critical_message: "Winding temperature rise exceeds the permitted rise."
     predicted_message: "Winding temperature rise is predicted to exceed the permitted rise within the lead time."
+
+  transformer_pressure_monitoring:
+    iot_slot: 8
+    operator: ">="
+    unit: null                 # physical pressure unit must be supplied before comparisons
+    warning: null              # pressure_warning: not supplied
+    critical: null             # pressure_critical: not supplied
+    lead_time_hours: null       # no pressure forecasting or scheduling
+    maintenance_type: TRANSFORMER_MAINTENANCE
+    maintenance_sheet: true
+    breach_signal: CRITICAL
+    warning_when_critical: false
+    warning_trigger_condition: HIGH_PRESSURE_WARNING
+    critical_trigger_condition: PRESSURE_CRITICAL
+    condition_detail: absolute_pressure_condition
+    warning_detail: pressure_warning
+    critical_detail: pressure_critical
+    warning_message: "Transformer pressure reached or exceeded the configured warning threshold."
+    critical_message: "Transformer pressure reached or exceeded the configured critical threshold."
+    extra_checks:
+      - detail: pressure_rate
+        operator: ">="
+        threshold: null        # pressure_rise_rate_critical: not supplied
+        unit: null             # must equal configured pressure unit/hour; no implicit conversion
+        unit_detail: pressure_rate_unit
+        signal: CRITICAL
+        trigger_condition: RAPID_PRESSURE_RISE
+        condition_detail: rapid_pressure_condition
+        threshold_detail: pressure_rise_rate_critical
+        message: "Transformer pressure rise rate reached or exceeded the configured critical rate."

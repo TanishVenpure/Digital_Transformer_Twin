@@ -15,17 +15,21 @@ class ExtraCheck(BaseModel):
     model_config = ConfigDict(extra="forbid")
     detail: str = Field(min_length=1)
     operator: Operator
-    threshold: float = Field(allow_inf_nan=False)
-    unit: str = Field(min_length=1)
+    threshold: float | None = Field(default=None, allow_inf_nan=False)
+    unit: str | None = Field(default=None, min_length=1)
     signal: Literal[Signal.WARNING, Signal.CRITICAL]
     message: str = Field(min_length=1)
+    trigger_condition: str | None = None
+    condition_detail: str | None = None
+    threshold_detail: str | None = None
+    unit_detail: str | None = None  # comparison requires the calculated detail to use this unit
 
 
 class IoTRule(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    iot_slot: int = Field(ge=1, le=7)
+    iot_slot: int = Field(ge=1, le=8)
     operator: Operator
-    unit: str = Field(min_length=1)
+    unit: str | None = Field(default=None, min_length=1)
     warning: float | None = Field(default=None, allow_inf_nan=False)
     critical: float | None = Field(default=None, allow_inf_nan=False)
     # Measurement-device IoTs report MAINTENANCE_REQUIRED rather than CRITICAL.
@@ -33,6 +37,12 @@ class IoTRule(BaseModel):
     lead_time_hours: float | None = Field(default=None, ge=0, allow_inf_nan=False)
     maintenance_type: MaintenanceType
     warning_message: str | None = None
+    warning_when_critical: bool = True
+    warning_trigger_condition: str | None = None
+    critical_trigger_condition: str | None = None
+    condition_detail: str | None = None
+    warning_detail: str | None = None
+    critical_detail: str | None = None
     critical_message: str = Field(min_length=1)
     predicted_message: str | None = None
     parameters: dict[str, float] = Field(default_factory=dict)
