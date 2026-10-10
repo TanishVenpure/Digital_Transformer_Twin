@@ -303,6 +303,36 @@ def twin3d_signal(signal: SignalIn) -> dict[str, Any]:
     return {"model": selection.model_dump(mode="json"), "switched": call is not None, "model_call": call}
 
 
+# --- two-timebar model (app/twin2): timebar 1 = one day of fast signals, timebar 2 = one year daily ----------
+
+@app.get("/api/twin2/timebar/{n}")
+def twin2_timebar(n: int) -> dict[str, Any]:
+    """Playback payload for timebar 1 (1-minute resolution + 20 ms event windows) or timebar 2 (daily)."""
+    from app.twin2.build import load_payload
+    if n not in (1, 2):
+        raise HTTPException(404, "Timebar must be 1 or 2")
+    return load_payload(n)
+
+
+@app.post("/api/twin2/rebuild")
+def twin2_rebuild() -> dict[str, Any]:
+    """Re-run both simulations from config/twin2.yaml and rewrite the datasets."""
+    from app.twin2.build import build
+    out = build()
+    return {n: len(out[n]["events"]) for n in ("timebar1", "timebar2")}
+
+
+@app.get("/api/twin2/files/{name}")
+def twin2_file(name: str):
+    """Download one of the generated datasets (CSV)."""
+    from fastapi.responses import FileResponse
+    from app.twin2.build import OUT_DIR
+    path = (OUT_DIR / name).resolve()
+    if path.parent != OUT_DIR.resolve() or path.suffix != ".csv" or not path.exists():
+        raise HTTPException(404, "Unknown dataset")
+    return FileResponse(path, media_type="text/csv", filename=name)
+
+
 @app.get("/", include_in_schema=False)
 def root() -> RedirectResponse:
     return RedirectResponse("/dashboard/")

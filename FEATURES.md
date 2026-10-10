@@ -1,16 +1,17 @@
 # Digital Transformer Twin: features
 
-A digital twin of a 630 kVA, 11 / 0.433 kV distribution transformer. Seven monitors watch the
-transformer's sensor readings hour by hour. A 3D model shows which part needs attention. A
-maintenance sheet records every check the monitors raise, and trend analytics spot slow
-problems that single readings miss.
+A digital twin of the CPRI 630 kVA, 11 / 0.433 kV distribution transformer. The dashboard plays
+**two timebars**: one day of fast signals, with voltage and current every 20 ms, thermal every
+1 s, and pressure and ambient every 1 min, and one year of daily readings for oil leakage and
+the precision devices. A 3D model shows which part needs attention, every signal is listed with
+its time, and every variable has a graph.
 
 The project has two parts:
 
 | Part | Folder | What it is |
 |---|---|---|
-| Dashboard | `dashboard/` | The web page: 3D model, monitor cards, graphs, maintenance sheet, timeline |
-| Backend | `twin_iot/` | FastAPI + PostgreSQL: validates readings, runs the 8 monitors and the analytics, serves the dashboard at `/dashboard/` |
+| Dashboard | `dashboard/` | The web page: 3D model, monitor cards, graphs, signal list, two timebars (`timebars.js`) |
+| Backend | `twin_iot/` | FastAPI: the two-timebar model (`app/twin2/`) and the earlier hourly 8-monitor pipeline on PostgreSQL; serves the dashboard at `/dashboard/` |
 
 ---
 
@@ -21,11 +22,11 @@ as frosted-glass panels:
 
 | Where | Panel |
 |---|---|
-| Top | Header: transformer rating, number of readings and date range, playback clock, overall status |
+| Top | Header: transformer rating, voltage class and rated currents, timebar 1 clock and timebar 2 date, overall status |
 | Top centre | Alarm card: which monitor the 3D view is focused on, and its status |
-| Left | Monitor cards, in two groups: Precision measurement (2) and Transformer (5) |
-| Right | Assistant (dropdown), Maintenance sheet, Data (dropdown) |
-| Bottom centre | Model controls, then the timeline |
+| Left | Monitor cards, grouped by timebar (9 fast-signal monitors, 4 daily monitors) |
+| Right | Assistant (dropdown), Signals & maintenance, Data (dropdown with the datasets) |
+| Bottom centre | Model controls, then the two timebars |
 | Over the model | Camera movement pad |
 
 On screens narrower than 1100 px the layout stacks: the model on top, the panels below it.
@@ -80,178 +81,145 @@ explode-and-assemble animation).
 
 ---
 
-## 3. The monitors
+## 3. Two timebars
 
-Each card shows the monitor's name, what it measures, the current value, a health bar with
-its health %, and its status. Click a card, or press Enter on it, to open its graph.
-
-| # | Monitor | Group | Measures | Warning | Critical |
-|---|---|---|---|---|---|
-| 1 | Current Sensor | Precision measurement | Instrument error vs a reference meter, % | | > 1 % |
-| 2 | Voltage Sensor | Precision measurement | Instrument error vs a reference meter, % | | > 1 % |
-| 3 | Current | Transformer | Load, % of rated current (841 A) | ≥ 90 % | ≥ 100 % |
-| 4 | Voltage | Transformer | Supply deviation from 250 V nominal, % | ≥ 5 % | ≥ 10 % |
-| 5 | Oil Level | Transformer | Conservator gauge, % | ≤ 40 % | ≤ 20 % |
-| 6 | Top-Oil Temperature | Transformer | Top-oil temperature, °C | ≥ 95 °C (alarm) | ≥ 105 °C (trip) |
-| 7 | Winding Temperature (WTI) | Transformer | Hottest phase winding temperature, absolute °C | ≥ 110 °C (alarm) | ≥ 120 °C (trip) |
-| 8 | Transformer Pressure | Transformer | Measured oil / tank pressure | not set yet | not set yet |
-
-The limits are set in `twin_iot/config/thresholds.yaml`. Several are marked EXAMPLE and
-should be replaced with the real nameplate and manufacturer values.
-
-Top-Oil Temperature has one extra check: a rise over ambient of more than 40 K gives a
-Warning.
-
-**Winding temperature (WTI), CPRI transformer:** the protection quantity is the absolute
-temperature of the hottest phase, T_WTI = max(T_R, T_Y, T_B). 109.9 °C is Normal, 110.0 °C is the
-alarm (Warning), 119.9 °C is still Warning and 120.0 °C is the trip (Critical). The settings live in
-`thresholds.yaml`, not in the code. Missing or invalid WTI data gives No data, never a false trip,
-and a missing ambient doesn't stop the WTI check. The winding rise over ambient (the old 40 / 45 K
-rule) no longer sets the status. It's kept only as analytics: the rise, the thermal model's
-expected value, the excess over it and the insulation loss of life (section 5).
-
-**OTI and WTI are independent:** top-oil (95 / 105 °C) and winding (110 / 120 °C) are judged
-separately and never averaged. The overall status is the worse of the two. Health % and the
-assistant never affect a trip.
-
-**Transformer Pressure** has no unit or limits configured yet, so it shows No data until its
-settings are supplied.
-
-### Statuses
-| Status | Colour | Meaning |
-|---|---|---|
-| Normal | Green | Within limits |
-| Warning | Amber | Past the warning limit |
-| Predicted | Purple | Not past the limit yet, but the trend reaches the critical limit within the lead time (24 h for current, 72 h for oil, 6 h for temperatures) |
-| Maintenance | Orange | Maintenance required. The sensor monitors (1 and 2) only ever raise this, because a faulty sensor is not a transformer fault |
-| Critical | Red | Past the critical limit |
-
-A monitor shows **No data** when its inputs were missing or invalid for that hour. Bad input
-is never treated as a fault.
-
-### Health %
-100 % means as new and 0 % means at the critical limit. A value past the limit goes below 0.
-The bar is coloured by status. Each group header shows how many of its monitors need
-attention, and the header pill shows the overall worst status.
-
-### Trend badges on the cards
-When the trend analytics (section 5) raise a flag, the matching card shows a badge:
-
-| Badge | Card | Meaning |
-|---|---|---|
-| Leak accelerating | Oil Level | Each oil top-up lasts less time |
-| Load growing | Current | Overloads are becoming more frequent |
-| Running hot | Winding Temperature | The winding is hotter than its load explains |
-| Oil ageing | Top-Oil Temperature | Radiator cleaning recovers less each time |
-
----
-
-## 4. Graph view (click a monitor card)
-
-| Control | Options |
-|---|---|
-| Chart | **Health %** (100 to 0) or **Measured value** (in the monitor's own unit) |
-| Range | 7 days, 30 days or All |
-| Close | × button or Esc |
-
-The graph shows:
-- The metric line, with dashed **warning** and **critical** limit lines.
-- **▼ markers** where a maintenance check was raised, coloured by its signal.
-- **Ⓜ markers** where maintenance was actually carried out.
-- A status strip under the chart, one block per hour.
-- A hover tooltip with the hour, value, status and any repair at that moment.
-- A stats row: health now, measured value, time healthy, checks raised, maintenance done and
-  time to critical.
-- A banner explaining any trend flag in plain words.
-- A list of the maintenance performed in the window.
-
-Monitor-specific extras:
-- **Top-Oil Temperature:** the temperature the thermal model expects for this load and
-  weather, and shaded bands showing where the heat comes from: grey for load, amber for a
-  cooling fault, red for low oil. It also shows radiator-cleaning cycles, cooling health,
-  the weather-adjusted temperature and when the next cleaning is due.
-- **Winding Temperature (WTI):** the 110 / 120 °C alarm and trip lines (in the Measured value
-  view), the WTI the thermal model expects at this load (ambient + expected rise), and a weekly
-  review of the rise analytics (excess over the model, insulation ageing). These are analytics
-  only and never the trip.
-- **Current:** the daily-peak trend line, with a dashed projection.
-- **Oil Level:** refill cycles and how long each one lasted.
-- In the Measured value view, monitors where higher is worse (all except Oil Level) have the
-  axis inverted, so heading toward the limit always reads as a decline, as it does in the
-  Health % view.
-
-The graph follows the timeline. Its window ends at the playback hour, so playing the
-timeline draws it live. Link options: `?metric=1..7` opens a graph, `?range=7d|30d|all`,
-`?chart=health|value`.
-
----
-
-## 5. Trend analytics (backend: `twin_iot/app/analytics/`)
-
-These look across days and maintenance cycles rather than single readings. Settings are in
-`twin_iot/config/analytics.yaml`.
-
-| Analytic | Flag | How it's detected |
-|---|---|---|
-| Oil leak (`oil_leak.py`) | ACCELERATING_OIL_LEAK | Finds oil top-ups (a jump of 10 % or more on the gauge), fits the leak rate in each refill cycle, and flags when the rate grows by 15 % or more per cycle, 2 cycles in a row |
-| Load growth (`load_growth.py`) | LOAD_GROWTH | Weekly review of the daily peaks over 28 days. Flags when overload hours keep rising week on week and the peak trend grows at 0.1 % of rated per day or more |
-| Winding thermal (`winding.py`) | WINDING_EXCESS_HEATING | IEC 60076-7 thermal model of an ONAN transformer. Flags when the winding runs 1.5 K or more above what its load explains and the gap grows 2 weeks in a row. Also tracks insulation loss of life |
-| Top-oil cooling (`top_oil.py`) | COOLING_DEGRADED, OIL_AGEING | Compares the measured top oil with the thermal model to get a cooling health %. Below 80 % it recommends radiator cleaning. If each cleaning recovers less and the interval keeps shrinking, it flags oil ageing |
-
-Each flag is added to the maintenance sheet and **pinned** at the top of the sheet in the
-dashboard.
-
----
-
-## 6. Maintenance sheet (right panel)
-
-- One row per check raised: check number, monitor, signal, group, recommended action, when it
-  opened, and whether it is still open or was resolved (and after how many hours).
-- It follows the playback hour, so it shows only the checks raised up to that point, newest
-  first.
-- **Filters:** All, Precision measurement or Transformer.
-- The latest trend flag is **pinned** on top.
-- **CSV** link: downloads the whole sheet.
-- Voltage deviations are left out of the sheet. They are supply-quality events for the
-  utility, not transformer maintenance.
-
-The recommended actions are in `twin_iot/config/maintenance_actions.yaml`.
-
----
-
-## 7. Timeline (bottom panel)
+The dashboard plays two independent timelines of the **CPRI transformer** (630 kVA, 11 / 0.433 kV,
+ONAN). Each has its own player at the bottom:
 
 | Control | What it does |
 |---|---|
-| ▶ / ❚❚ | Play or pause |
-| ⏮ / ⏭ | Back or forward one day |
-| **1 hour every [2] s** | Base tick rate: seconds of playback per hour of data (default 2 s, so 90 days take 72 minutes). Accepts 0.01 to 60 s |
-| **1× / 2× / 4× / 0.5×** | Fast-forward or slow down from the base rate. For example, 2 s at 2× plays 1 hour every second |
-| Time bar | Click or drag to jump to any hour |
-| Colour strip | The worst status for each hour, across all 90 days |
+| ▶ / ❚❚ | Play or pause. The player ticks every **20 ms** |
+| ⏮ / ⏭ | Back or forward one hour (timebar 1) or one week (timebar 2) |
+| **1 minute every [0.25] s** / **1 day every [0.5] s** | Base tick rate: seconds of playback per unit of data |
+| **1× / 2× / 4× / 0.5×** | Fast-forward or slow down from the base rate |
+| Bar and colour strip | Click or drag to jump; the strip shows the worst status at each point |
 
-The header shows the playback clock and the day (for example "Day 64 of 90"). Below the bar,
-the dashboard lists any invalid inputs for that hour. Link option: `#t=960` opens at hour 960.
+All the constants are in `twin_iot/config/twin2.yaml`. Values marked **ASSUMED** there aren't in
+the spec and must be replaced with the transformer's own data.
+
+### Timebar 1: one day of fast signals (`twin_iot/app/twin2/timebar1.py`)
+
+| Stream | Sampling |
+|---|---|
+| Primary and secondary voltage and current (3 phases) | Every **20 ms** (per-cycle RMS). Full rate in a window around each event, plus a 1 s stream of each second's min and max |
+| Top oil, WTI, measured winding, IEC model | Every **1 s** |
+| Ambient temperature | Every **1 min** |
+| Tank pressure | Every **1 min** |
+| Precision devices (current CT, voltage PT, temperature probe) | Every **1 min** |
+
+**Rules:**
+
+| Monitor | Formula | Signal |
+|---|---|---|
+| Loading (overload) | I_rated = S / (√3 · V_LL), which is 33.07 A primary and 840 A secondary. Loading = I / I_rated × 100 | **> 100 % warning**, **> 120 % trip** (the breaker opens after 2 s) |
+| Voltage | Deviation = (V − V_nominal) / V_nominal × 100 | **MV / LV class:** primary winding, ±6 %. **HV class:** secondary winding, +6 % / −9 %. Set by `voltage_class` |
+| Top oil (OTI) | Absolute T_O | **95 °C alarm**, **105 °C trip** |
+| Winding (WTI) | WTI = T_O + thermal image (its own gradient and time constant) | **110 °C alarm**, **120 °C trip** |
+| Thermal trip | TRIP = OTI trip **OR** WTI trip | OTI and WTI are never averaged |
+| Precision devices | Per phase, \|measured − reference\| / reference × 100 | **> 1 %** on any phase gives maintenance for that device |
+| Tank pressure | dV_oil = β·V_oil0·(T1 − T0), V_gas1 = V_gas0 − dV_oil (invalid if ≤ 0), P1 = P0·(T_gas1 / T_gas0)·(V_gas0 / V_gas1) in kelvin, gauge = P_abs − P_atm | **185 kPa warning**, or the 30-minute trend reaching the limit. **230 kPa limit** (both ASSUMED) |
+
+**Thermal analytics (IEC 60076-7). These never trip:**
+- K = I / I_rated. Ultimate top-oil rise ΔT_Ou = ΔT_Or·((1 + R·K²) / (1 + R))^x, with a first-order
+  lag τ_O. T_O is already absolute, so ΔT_O = T_O − T_A and ambient is never added twice.
+- Hot spot T_H = T_O + ΔT_HO, where ΔT_HO,u = H·g_r·K^y with the winding lag. T_H isn't the WTI and
+  isn't the measured winding.
+- Winding thermal residual R_W = measured winding − expected winding.
+  **WINDING_EXCESS_HEATING** is flagged when R_W is ≥ 1.5 K and has grown 2 windows in a row. The
+  windows are **30 minutes, scaled down** from the weekly review because this timebar is one day.
+- Ageing V = 2^((T_H − 98) / 6), L_EQ = Σ V·dt (equivalent hours) and ageing ratio = L_EQ / t.
+  **ACCELERATED_THERMAL_AGEING** is flagged when the mean V over 60 min is above 1. This is never
+  shown as "remaining life".
+- **COOLING_DEGRADATION** is flagged when the measured top-oil rise is more than 1.15 × the model
+  over 30 min. **Top-oil rise > 40 K** is an analytics warning.
+- After an outage, the model restarts from the measured oil state (the IEC measured-top-oil
+  method).
+
+**The simulated day (2026-07-15, UTC).** Every condition appears at least once:
+
+| Time | What happens | Signals |
+|---|---|---|
+| 03:20 | Light-load over-voltage: primary +7.3 % for 88 s | OVERVOLTAGE |
+| 05:12 | Winding probe drop-out for 20 s | Data error; the residual shows no data and nothing trips |
+| 07:45:10 | 2 s voltage dip, primary −8.8 % | UNDERVOLTAGE |
+| 10:08 to 10:21 | A neighbouring feeder is transferred on (112 %), then a 128 % surge | OVERLOAD warning, then overload trip. The breaker opens; out until 10:40 |
+| 11:00 to 13:43 | Radiator fans fail with a valve part-closed, and a winding cooling duct blocks | COOLING_DEGRADATION, top-oil rise > 40 K, WINDING_EXCESS_HEATING, ACCELERATED_THERMAL_AGEING, OTI alarm, WTI alarm, PRESSURE warning, then the **OTI trip** at 105 °C |
+| 13:43 | Tank pressure peaks at 201.8 kPa: a **near failure caught** 28 kPa below the limit | PRESSURE_WARNING |
+| 17:30 to 19:02 | Evening peak at about 117 % with one radiator bank still out | OVERLOAD warning (below the trip), WTI alarm, then the **WTI trip** at 120 °C |
+| 20:42 | The current device's Y phase drifts past 1 % | PRECISION_CURRENT (maintained on timebar 2) |
+
+### Timebar 2: one year of daily readings (`twin_iot/app/twin2/timebar2.py`)
+
+| Monitor | Formula | Signal |
+|---|---|---|
+| Oil volume (leak) | V_exp,noleak = V_ref·[1 + β(T_oil − T_ref)], L_cum = Σ q_leak·dt, R = V_meas − V_exp,noleak ≈ −L_cum | **OIL_LEAK** when R < −3 L. **MINIMUM_OIL_LEVEL** when V_meas < 288 L |
+| Precision devices (CT, PT, temperature) | Daily per-phase deviation from the reference | **> 1 %**, then maintenance (recalibration) a few days later |
+
+The simulated year (2026-07-01 to 2027-06-30) has two leaks. The first is caught by the
+tolerance alarm and repaired. The second reaches the **minimum oil level** before it's repaired.
+Each precision device fails 2 or 3 times, about every 4 months, and is recalibrated each time.
 
 ---
 
-## 8. Data panel (dropdown, right)
+## 4. Monitor cards and graphs
 
-Drop a CSV of hourly readings, or click to choose one. Every row is validated and evaluated
-exactly like a live reading. The result line shows how many rows were stored and rejected,
-and why. The dashboard then reloads with the new data.
+The left column has one card per monitor, grouped by timebar. Each card shows the value at its
+timebar's cursor and its status: Normal, Warning, Maintenance, Critical or **Out of service**
+(while the breaker is open).
 
-The CSV needs a `timestamp` column (ISO format) plus the input columns:
-`current_r/y/b`, `reference_current_r/y/b`, `voltage_r/y/b`, `reference_voltage_r/y/b`,
-`oil_level`, `top_oil_temperature`, `ambient_temperature`, `winding_temperature_r/y/b`, and
-optionally `transformer_id`. To rename columns, edit `twin_iot/config/column_mapping.yaml`.
+Click a card, or a signal in the right-hand list, to open its graphs. **Every variable has a
+graph:**
+- **Loading:** max and mean per minute, with the 100 / 120 % lines. A **20 ms detail** chart
+  for the overload onset and the overload trip.
+- **Voltage:** the watched winding's min and max deviation with its limits, the other
+  winding's deviation for reference, and 20 ms detail for the over-voltage and the dip.
+- **Top oil:** measured vs the IEC expected value, plus ambient, with the 95 / 105 °C lines.
+  Also the top-oil rise measured vs expected, with the 40 K line.
+- **WTI:** the WTI, the estimated hot spot and the measured winding, with the 110 / 120 °C lines.
+- **Thermal analytics:** the residual R_W, the ageing rate V, L_EQ, the ageing ratio and the
+  load factor K.
+- **Tank pressure:** absolute and gauge pressure with the warning and limit lines, plus the
+  oil expansion and remaining headspace.
+- **Precision devices:** the R, Y and B deviation with the 1 % line, on both timebars.
+- **Oil volume:** measured vs expected, the residual vs −L_cum with the tolerance line, the
+  minimum-level line, and the oil temperature.
 
-**Assistant (dropdown):** a placeholder for the planned LLM + RAG assistant. It is not wired
-up yet.
+Each graph marks every signal raised (▼), the cursor (white line) and the out-of-service
+periods (shaded). Choose the **whole timebar** or **±1 hour / ±30 days** around the cursor.
+
+The **3D model** takes its colours from the cards: current device and loading on the CTs,
+voltage device and voltage on the LV leads, oil on the gauge, OTI and pressure on the top-oil
+sensor, WTI, thermal analytics and the temperature device on the winding sensors. The camera
+focuses on the worst monitor.
 
 ---
 
-## 9. Backend (`twin_iot/`)
+## 5. Signals and maintenance (right panel)
+
+Every warning, alarm, trip, analytics flag and maintenance action up to each cursor, newest
+first. You can filter by timebar, and click a signal to open its monitor's graphs. **CSV**
+downloads them all.
+
+---
+
+## 6. Datasets (Data dropdown)
+
+The generated files are in `twin_iot/data/twin2/`, and the dashboard links to them:
+
+| File | Contents |
+|---|---|
+| `timebar1_electrical_1s.csv` | Energised flag, loading %, primary and secondary deviation (min / max of each second's 50 cycles), conditions |
+| `timebar1_electrical_20ms.csv` | Per-cycle loading and voltage deviation in each event window |
+| `timebar1_thermal_1s.csv` | load_factor, top_oil_rise_measured / expected, hotspot_temperature_estimated, WTI, winding_thermal_residual, relative_ageing_rate, equivalent_ageing_hours, ageing_ratio, the oti / wti alarm and trip conditions, winding_excess_heating, accelerated_thermal_ageing, cooling_degradation |
+| `timebar1_ambient_1min.csv`, `timebar1_pressure_1min.csv`, `timebar1_precision_1min.csv` | Ambient. Pressure (oil_expansion_volume, headspace_volume_final, pressure_final_abs, pressure_rise, validity_flag). Precision deviations |
+| `timebar2_daily.csv` | The oil volume balance and the precision devices, one row a day |
+| `events.csv` | Every signal of both timebars |
+
+Regenerate them with `python scripts/simulate_twin2.py`, or `POST /api/twin2/rebuild`.
+
+---
+
+## 7. Hourly 8-monitor backend (`twin_iot/`, still available through the API)
 
 ### Processing pipeline
 Reading → **validation** (`config/validation.yaml`: each input must be a finite number in a
@@ -265,6 +233,9 @@ stored in PostgreSQL → **maintenance sheet** rebuilt.
 | GET | `/api/health` | API and database status |
 | GET | `/api/transformers` | Transformers with readings and their date range |
 | GET | `/api/iots` | The monitors and their limits |
+| GET | `/api/twin2/timebar/1` or `/2` | Two-timebar payloads the dashboard plays (built on first request) |
+| POST | `/api/twin2/rebuild` | Re-run both simulations from `config/twin2.yaml` |
+| GET | `/api/twin2/files/{name}.csv` | Download a generated dataset |
 | GET | `/api/timeline/{id}` | Every stored hour (statuses, values, time to critical, input issues, 3D view) plus repairs and all trend analytics. The dashboard's main data feed |
 | GET | `/api/analytics/oil-leak/{id}` | Oil-leak analysis |
 | GET | `/api/analytics/load-growth/{id}` | Load-growth analysis |
@@ -309,7 +280,7 @@ simulator and all four analytics. They need no database.
 
 ---
 
-## 10. Running it locally
+## 8. Running it locally
 
 Needs Python 3.11+ and PostgreSQL 13+.
 
@@ -323,7 +294,8 @@ initdb -D twin_pg -U twin -A trust
 pg_ctl start -D twin_pg -o "-p 5434" -l twin_pg.log
 createdb -h localhost -p 5434 -U twin twin_iot
 
-python scripts/simulate.py
+python scripts/simulate.py            # hourly 8-monitor data (PostgreSQL)
+python scripts/simulate_twin2.py      # two-timebar datasets (no database needed)
 python -m uvicorn app.api.main:app --port 8020
 ```
 

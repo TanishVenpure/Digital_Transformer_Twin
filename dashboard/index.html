@@ -313,6 +313,32 @@
   .repairs li time { color: var(--muted); font-family: ui-monospace, Consolas, monospace; white-space: nowrap; }
   .repairs li.none { color: var(--muted); }
 
+  /* ---------- two timebars ---------- */
+  .timebars { display: flex; flex-direction: column; gap: 10px; }
+  .tb-panel .timeline-body { padding: 8px 14px 10px; gap: 6px; }
+  .tb-panel .panel-title { padding: 7px 14px; }
+  .tb-panel .rate { text-transform: none; letter-spacing: 0; }
+  .s-OFF { --c: #6b7280; }
+  .s-NO_DATA { --c: #6b7280; }
+  .health[class*="s-"] .state { color: var(--c, var(--muted)); }
+  .health .value { color: var(--text); font-size: 12px; }
+  .datasets { margin: 0; padding: 10px 14px 14px 30px; display: grid; gap: 6px; font-size: 12px; }
+  .datasets a { color: var(--accent); text-decoration: none; }
+  .datasets a:hover { text-decoration: underline; }
+  .check[role="button"] { cursor: pointer; }
+  .check[role="button"]:hover { background: rgba(255, 255, 255, .04); }
+  .tb-charts { padding: 6px 12px 0; display: grid; gap: 10px; }
+  .tb-charts .chart { position: relative; background: var(--panel-2); border: 1px solid var(--border); border-radius: 10px; padding: 8px 8px 2px; }
+  .tb-charts .chart-title { font-size: 12px; color: var(--muted); margin: 0 4px 2px; }
+  .tb-charts svg { width: 100%; height: auto; display: block; }
+  .tb-charts .ax { fill: var(--muted); font: 11px ui-monospace, Consolas, monospace; }
+  .tb-charts .lim { font: 600 11px system-ui, sans-serif; }
+  .tb-charts .tip { top: 28px; }
+  .tb-charts .tip span { display: block; }
+  .win-bar { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; font-size: 12px; color: var(--muted); }
+  .win-bar button { padding: 3px 10px; font-size: 11px; border-radius: 999px; }
+  .win-bar button[aria-pressed="true"] { background: color-mix(in srgb, var(--accent) 22%, transparent); border-color: color-mix(in srgb, var(--accent) 60%, transparent); }
+
   @media (max-width: 1300px) {
     .overlay { grid-template-columns: 240px 1fr 320px; }
   }
@@ -360,15 +386,10 @@
     </div>
   </header>
 
-  <!-- Left: sensor health tiles -->
-  <section class="col-left">
-    <div class="col-label glass"><span>Precision measurement</span><span class="count" id="count-precision"></span></div>
-    <div class="health-grid" id="cards-precision"></div>
-    <div class="col-label glass"><span>Transformer</span><span class="count" id="count-transformer"></span></div>
-    <div class="health-grid" id="cards-transformer"></div>
-  </section>
+  <!-- Left: monitor cards for both timebars -->
+  <section class="col-left" id="cards"></section>
 
-  <!-- Right: assistant (dropdown), maintenance sheet, data (dropdown) -->
+  <!-- Right: assistant (dropdown), signals & maintenance, datasets (dropdown) -->
   <aside class="col-right">
     <details class="panel glass" id="chat-panel">
       <summary class="panel-title"><span>Assistant</span><span class="hint">Ask about the transformer</span></summary>
@@ -384,25 +405,29 @@
 
     <div class="panel glass maint">
       <div class="panel-title">
-        <span>Maintenance sheet <span id="maint-count"></span></span>
-        <a id="maint-download" href="#" download>CSV</a>
+        <span>Signals &amp; maintenance <span id="ev-count"></span></span>
+        <a id="ev-download" href="/api/twin2/files/events.csv">CSV</a>
       </div>
-      <div class="filters" role="group" aria-label="Filter maintenance checks">
+      <div class="filters" id="ev-filters" role="group" aria-label="Filter signals by timebar">
         <button data-filter="all" aria-pressed="true">All</button>
-        <button data-filter="precision" aria-pressed="false">Precision measurement</button>
-        <button data-filter="transformer" aria-pressed="false">Transformer</button>
+        <button data-filter="1" aria-pressed="false">Timebar 1 · 24 h</button>
+        <button data-filter="2" aria-pressed="false">Timebar 2 · 1 year</button>
       </div>
-      <div class="maint-list" id="maint-list"><div class="empty">No checks yet.</div></div>
+      <div class="maint-list" id="ev-list"><div class="empty">Loading…</div></div>
     </div>
 
     <details class="panel glass" id="data-panel">
-      <summary class="panel-title"><span>Data</span><span class="hint">Upload a CSV</span></summary>
-      <label class="drop" id="drop">
-        <span>Drop data file here</span>
-        <small>CSV · hourly readings · validated on upload</small>
-        <span class="result" id="drop-result"></span>
-        <input type="file" id="file" accept=".csv" hidden>
-      </label>
+      <summary class="panel-title"><span>Data</span><span class="hint">Download the datasets</span></summary>
+      <ul class="datasets">
+        <li><a href="/api/twin2/files/timebar1_electrical_1s.csv">Timebar 1 · voltage / current, 1 s (min / max of 20 ms)</a></li>
+        <li><a href="/api/twin2/files/timebar1_electrical_20ms.csv">Timebar 1 · voltage / current, 20 ms event windows</a></li>
+        <li><a href="/api/twin2/files/timebar1_thermal_1s.csv">Timebar 1 · thermal (OTI, WTI, IEC model, ageing), 1 s</a></li>
+        <li><a href="/api/twin2/files/timebar1_ambient_1min.csv">Timebar 1 · ambient, 1 min</a></li>
+        <li><a href="/api/twin2/files/timebar1_pressure_1min.csv">Timebar 1 · tank pressure, 1 min</a></li>
+        <li><a href="/api/twin2/files/timebar1_precision_1min.csv">Timebar 1 · precision devices, 1 min</a></li>
+        <li><a href="/api/twin2/files/timebar2_daily.csv">Timebar 2 · oil leak + precision devices, daily</a></li>
+        <li><a href="/api/twin2/files/events.csv">All signals and maintenance actions</a></li>
+      </ul>
     </details>
   </aside>
 
@@ -418,28 +443,7 @@
       <label class="check"><input type="checkbox" id="labels-toggle" checked> Labels</label>
     </div>
 
-    <div class="panel glass">
-      <div class="panel-title"><span>Timeline</span><span id="rate">1 hour every 2 s</span></div>
-      <div class="timeline-body">
-        <div class="controls">
-          <button id="back" title="Back one day" disabled>&#9198;</button>
-          <button id="play" title="Play / pause" disabled>&#9654;</button>
-          <button id="fwd" title="Forward one day" disabled>&#9197;</button>
-          <label class="tick" for="tick" title="Seconds of playback for each hour of data at 1×">1 hour every
-            <input type="number" id="tick" min="0.01" max="60" step="0.5" value="2" disabled> s</label>
-          <button id="speed" title="Fast-forward / slow down (multiplies the tick rate)" disabled>1×</button>
-          <span class="time" id="time">--:-- / --:--</span>
-        </div>
-        <div class="track" id="track"><canvas id="strip"></canvas><span class="knob" id="knob"></span></div>
-        <div class="ticks" id="ticks"><span>start</span><span></span><span></span><span></span><span>end</span></div>
-        <div class="issues" id="issues"></div>
-        <div class="legend">
-          <span class="s-NORMAL"><i></i>Normal</span><span class="s-WARNING"><i></i>Warning</span>
-          <span class="s-PREDICTED_MAINTENANCE"><i></i>Predicted</span><span class="s-MAINTENANCE_REQUIRED"><i></i>Maintenance</span>
-          <span class="s-CRITICAL"><i></i>Critical</span>
-        </div>
-      </div>
-    </div>
+    <div id="timebars" class="timebars"></div>
   </section>
 
   <!-- camera pad over the open space around the model -->
@@ -459,43 +463,25 @@
   </section>
 </main>
 
-<!-- per-monitor graph, opened by clicking a monitor card -->
-<div class="modal" id="metric-overlay" hidden role="dialog" aria-modal="true" aria-labelledby="metric-title">
+<!-- per-monitor graphs, opened by clicking a monitor card or a signal -->
+<div class="modal" id="tb-modal" hidden role="dialog" aria-modal="true" aria-labelledby="tb-title">
   <div class="msheet glass">
     <div class="msheet-head">
       <div>
-        <h2 id="metric-title">Metric</h2>
-        <div class="sub" id="metric-sub"></div>
-        <div class="badges"><span class="tag" id="metric-group"></span><span class="pill" id="metric-status"></span></div>
+        <h2 id="tb-title">Monitor</h2>
+        <div class="sub" id="tb-sub"></div>
+        <div class="badges"><span class="tag" id="tb-tag"></span><span class="pill" id="tb-status"></span></div>
       </div>
       <div class="right">
-        <span class="seg" id="metric-view" role="group" aria-label="Chart view">
-          <button data-view="health" aria-pressed="true">Health %</button><button data-view="value" aria-pressed="false">Measured value</button>
+        <span class="seg" id="tb-range" role="group" aria-label="Time range">
+          <button data-range="all" aria-pressed="true">Whole timebar</button><button data-range="zoom" aria-pressed="false">±1 hour</button>
         </span>
-        <span class="seg" id="metric-range" role="group" aria-label="Time range">
-          <button data-range="7d" aria-pressed="true">7 days</button><button data-range="30d" aria-pressed="false">30 days</button><button data-range="all" aria-pressed="false">All</button>
-        </span>
-        <button id="metric-close" aria-label="Close graph">&times;</button>
+        <button id="tb-close" aria-label="Close graphs">&times;</button>
       </div>
     </div>
-    <div class="banner" id="metric-banner" hidden></div>
-    <div class="stats" id="metric-stats"></div>
-    <div class="chart-legend">
-      <span><i class="ln"></i>Metric</span>
-      <span class="s-WARNING"><i class="dash"></i>Warning limit</span>
-      <span class="s-CRITICAL"><i class="dash"></i>Critical limit</span>
-      <span><i class="tri"></i>Maintenance check raised (colour = signal)</span>
-      <span><i class="mnt">M</i>Maintenance performed</span>
-      <span id="legend-inverted" hidden class="inv">&#8595; Axis inverted: higher values are plotted lower, so heading toward the limit reads as a decline</span>
-      <span id="legend-expected" hidden><i class="dash" style="--c:#eef3f8"></i><span id="legend-expected-text">Expected at this load (thermal model)</span></span>
-      <span class="legend-topoil" hidden><i class="band" style="--c:#64748b"></i>Heat from load</span>
-      <span class="legend-topoil" hidden><i class="band" style="--c:#f59e0b"></i>Cooling fault</span>
-      <span class="legend-topoil" hidden><i class="band" style="--c:#ef4444"></i>Low oil</span>
-      <span id="legend-trend" hidden><i class="ln" style="border-top-color:#eef3f8"></i>Daily-peak trend (dashed = projection)</span>
-      <span>Strip below = status per hour</span>
-    </div>
-    <div class="plot" id="metric-plot"><svg id="metric-svg" role="img" aria-label="Metric health over time"></svg><div class="tip" id="metric-tip" hidden></div></div>
-    <div class="repairs"><h3>Maintenance performed in this window</h3><ul id="metric-repairs"></ul></div>
+    <div class="chart-legend"><span>▼ signal raised (colour = level)</span><span>white line = cursor</span><span>shaded = out of service</span></div>
+    <div id="tb-charts" class="tb-charts"></div>
+    <div class="repairs"><h3>Signals for this monitor up to the cursor</h3><ul id="tb-events"></ul></div>
   </div>
 </div>
 
@@ -505,46 +491,9 @@
 <script src="vendor/three/RoomEnvironment.js"></script>
 <script src="metal.js?v=20261011-1"></script>
 <script src="twin3d.js?v=20261011-1"></script>
-<script src="metric-chart.js?v=20261011-1"></script>
+<script src="timebars.js?v=20261011-2"></script>
 <script>
 (() => {
-  const API = "/api";
-  // Playback: 1x = one hour of data every state.tick seconds (default 2 s, so 90 days take 72 minutes).
-  // The tick box sets that base rate; the speed button fast-forwards or slows down from it, as on main.
-  const DEFAULT_TICK_S = 2;
-  const SPEEDS = [1, 2, 4, 0.5];
-  const LABEL = { NORMAL: "Normal", WARNING: "Warning", PREDICTED_MAINTENANCE: "Predicted", MAINTENANCE_REQUIRED: "Maintenance", CRITICAL: "Critical" };
-  const RANK = { NORMAL: 0, WARNING: 1, PREDICTED_MAINTENANCE: 2, MAINTENANCE_REQUIRED: 3, CRITICAL: 4 };
-  const COLOR = { NORMAL: "#3fb950", WARNING: "#d29922", PREDICTED_MAINTENANCE: "#a371f7", MAINTENANCE_REQUIRED: "#f0883e", CRITICAL: "#f85149" };
-  // Monitor names and maintenance groups, by slot (1..8).
-  const MONITORS = {
-    1: { name: "Current Sensor", metric: "Instrument error vs reference", group: "precision", fmt: (v) => [v.toFixed(2), "%"] },
-    2: { name: "Voltage Sensor", metric: "Instrument error vs reference", group: "precision", fmt: (v) => [v.toFixed(2), "%"] },
-    3: { name: "Current", metric: "Load, % of rated current", group: "transformer", fmt: (v) => [v.toFixed(1), "%"] },
-    4: { name: "Voltage", metric: "Supply deviation (external grid)", group: "transformer", fmt: (v) => ["±" + v.toFixed(1), "%"] },
-    5: { name: "Oil Level", metric: "Conservator gauge", group: "transformer", fmt: (v) => [v.toFixed(1), "%"] },
-    6: { name: "Top-Oil Temperature", metric: "Top-oil, absolute", group: "transformer", fmt: (v) => [v.toFixed(1), "°C"] },
-    7: { name: "Winding Temperature (WTI)", metric: "Hottest phase, absolute · alarm 110 / trip 120 °C", group: "transformer", fmt: (v) => [v.toFixed(1), "°C"] },
-    8: { name: "Transformer Pressure", metric: "Measured oil pressure · unit unconfigured", group: "transformer", fmt: (v) => [v.toFixed(2), ""] },
-  };
-  // Trend flags from the backend's analytics (shown when the timeline response carries them).
-  const TREND_FLAGS = {
-    oil_leak: { flag: "ACCELERATING_OIL_LEAK", badge: "Leak accelerating", label: "Accelerating oil leak",
-      title: "Each oil top-up is lasting less time: oil loss is accelerating" },
-    load_growth: { flag: "LOAD_GROWTH", badge: "Load growing", label: "Load growth",
-      title: "Overloads are becoming more frequent: demand is growing toward the transformer's rating" },
-    winding: { flag: "WINDING_EXCESS_HEATING", badge: "Running hot", label: "Winding excess heating",
-      title: "The winding is hotter than its load explains: possible restricted oil flow or winding fault" },
-    top_oil: { flag: "OIL_AGEING", badge: "Oil ageing", label: "Oil ageing",
-      title: "Radiator cleaning recovers less each time and the interval keeps shrinking: the oil itself is ageing" },
-  };
-  const FLAG_LABEL = Object.fromEntries(Object.values(TREND_FLAGS).map((f) => [f.flag, f.label]));
-  FLAG_LABEL.COOLING_DEGRADED = "Cooling degraded";
-  const GROUP = {
-    precision: { label: "Precision Measurement Maintenance", short: "Precision measurement" },
-    transformer: { label: "Transformer Maintenance", short: "Transformer" },
-  };
-
   const $ = (id) => document.getElementById(id);
   const twin = window.Twin3D
     ? Twin3D.create(document.getElementById("model-viewport"), {
@@ -567,263 +516,26 @@
         },
       })
     : { setStatuses() {}, focus() {}, resetView() {}, toggleSpin() { return false; }, setMode() {}, setOil() {}, setLabels() {}, explode() {}, t: 0 };
-  let chart = null;  // per-monitor graph, created once the data is loaded
-  const state = { data: null, sheet: [], filter: "all", pos: 0, playing: false, speed: 0, tick: DEFAULT_TICK_S, frame: -1, last: 0, model: null, painted: -1, signalBusy: false, signalPending: null };
-
-  const fmtTime = (iso) => { const d = new Date(iso); return d.toISOString().slice(0, 16).replace("T", " "); };
-  const fmtDay = (iso) => new Date(iso).toLocaleDateString(undefined, { day: "numeric", month: "short", timeZone: "UTC" });
-  const setStatusClass = (el, status) => { el.className = el.className.replace(/\bs-\S+/g, "").trim(); if (status) el.classList.add("s-" + status); };
-  const worst = (list) => list.reduce((w, s) => (s && (w == null || RANK[s] > RANK[w]) ? s : w), null);
-
-  function buildCards(iots) {
-    const html = { precision: "", transformer: "" };
-    for (const iot of iots) {
-      const m = MONITORS[iot.slot];
-      html[m.group] += `
-        <div class="health glass float" id="iot-${iot.slot}" data-slot="${iot.slot}" role="button" tabindex="0" title="Open the ${m.name} graph">
-          <span class="open" aria-hidden="true">&#8599;</span>
-          <div class="row"><span class="name">${m.name}</span><span class="value">—</span></div>
-          <div class="sub">${m.metric}</div>
-          <span class="flag"></span>
-          <div class="brow"><div class="bar"><span></span></div><span class="hp"></span></div>
-          <div class="state">No data</div>
-        </div>`;
-    }
-    $("cards-precision").innerHTML = html.precision;
-    $("cards-transformer").innerHTML = html.transformer;
-    document.querySelectorAll(".health[data-slot]").forEach((c) => {
-      const go = () => chart && chart.open(Number(c.dataset.slot));
-      c.onclick = go;
-      c.onkeydown = (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); go(); } };
-    });
-  }
-
-  // History along the time bar: worst status per pixel column (downsampled hours).
-  function drawStrip() {
-    const canvas = $("strip"), frames = state.data?.frames;
-    if (!frames) return;
-    const w = Math.max(1, Math.round(canvas.clientWidth * devicePixelRatio)), h = 10;
-    canvas.width = w; canvas.height = h;
-    const ctx = canvas.getContext("2d");
-    for (let x = 0; x < w; x++) {
-      const a = Math.floor((x / w) * frames.length), b = Math.max(a + 1, Math.floor(((x + 1) / w) * frames.length));
-      let s = null;
-      for (let i = a; i < b && i < frames.length; i++) s = worst([s, ...frames[i].s]);
-      ctx.globalAlpha = 0.75;
-      ctx.fillStyle = s ? COLOR[s] : "rgba(255,255,255,.12)";
-      ctx.fillRect(x, 0, 1, h);
-    }
-  }
-  new ResizeObserver(drawStrip).observe($("track"));
-
-  async function load(transformerId) {
-    const [timeline, sheet] = await Promise.all([
-      fetch(`${API}/timeline/${encodeURIComponent(transformerId)}`).then((r) => r.json()),
-      fetch(`${API}/maintenance/${encodeURIComponent(transformerId)}`).then((r) => r.json()),
-    ]);
-    state.data = timeline;
-    state.sheet = sheet.rows;
-    state.pos = 0; state.frame = -1; state.model = null; state.painted = -1;
-    buildCards(timeline.iots);
-    $("maint-download").href = `${API}/maintenance/${encodeURIComponent(transformerId)}?format=csv`;
-    const n = timeline.frames.length;
-    $("status").textContent = `630 kVA · 11 / 0.433 kV · Transformer ${timeline.transformer_id} · ${n} hourly readings · ${fmtDay(timeline.start)} – ${fmtDay(timeline.end)}`;
-    const ticks = [0, .25, .5, .75, 1].map((f) => fmtDay(timeline.frames[Math.round(f * (n - 1))].t));
-    $("ticks").innerHTML = ticks.map((t) => `<span>${t}</span>`).join("");
-    ["back", "play", "fwd", "tick", "speed"].forEach((id) => ($(id).disabled = false));
-    const start = /t=(\d+)/.exec(location.hash);  // e.g. #t=960 opens at hour 960
-    state.pos = start ? Math.min(n - 1, Number(start[1])) : 0;
-    drawStrip();
-    if (!chart && window.MetricChart) chart = MetricChart.create({ MONITORS, LABEL, COLOR, GROUP, getState: () => state });
-    render(true);
-    const openSlot = /(?:^|[?&])metric=(\d)/.exec(location.search);  // link option: ?metric=5 opens Oil Level
-    if (openSlot && chart && chart.slot == null) chart.open(Number(openSlot[1]));
-  }
-
-  function render(force) {
-    const frames = state.data.frames;
-    const index = Math.min(frames.length - 1, Math.floor(state.pos));
-    const ratio = frames.length > 1 ? state.pos / (frames.length - 1) : 0;
-    $("knob").style.left = `${ratio * 100}%`;
-    if (index === state.frame && !force) return;
-    state.frame = index;
-    const frame = frames[index];
-    if (!frame) return;
-    const days = Math.ceil(frames.length / 24);
-    $("time").textContent = `${fmtTime(frame.t)} UTC · day ${Math.floor(index / 24) + 1} of ${days}`;
-    $("clock").textContent = `${fmtTime(frame.t)} UTC`;
-    $("clock-sub").textContent = `Day ${Math.floor(index / 24) + 1} of ${days}`;
-
-    // values and health % for this hour
-    state.data.iots.forEach((iot, i) => {
-      const el = $(`iot-${iot.slot}`), value = frame.v[i], m = MONITORS[iot.slot];
-      const [num, unit] = value == null ? ["—", ""] : m.fmt(value);
-      el.querySelector(".value").textContent = `${num}${iot.slot === 8 && iot.unit !== "unconfigured" ? " " + iot.unit : unit}`;
-      if (iot.slot === 8) {
-        const d = frame.d?.[8];
-        el.querySelector(".sub").textContent = value == null ? "No pressure data" :
-          `Unit: ${iot.unit} · rate: ${d?.pressure_rate == null ? "unavailable" : d.pressure_rate.toFixed(3) + " " + (d.pressure_rate_unit || "source units/hour")}`;
-      }
-      el.querySelector(".brow").hidden = iot.slot === 8;
-      // health: 100% as new, 0% at the critical limit
-      const health = window.MetricChart ? MetricChart.healthOf(iot.slot, value, iot) : null;
-      el.querySelector(".bar > span").style.width = health == null ? "0" : `${Math.max(2, health)}%`;
-      el.querySelector(".hp").textContent = health == null ? "" : `${Math.round(health)}%`;
-      el.querySelector(".hp").title = "Health: 100% as new, 0% at the critical limit";
-    });
-    if (chart && chart.slot != null) chart.update();
-
-    const bad = frame.q.filter(([, code]) => code !== "MISSING");
-    const missing = frame.q.length - bad.length;
-    $("issues").innerHTML = frame.q.length
-      ? `<b>Validation:</b> ${bad.map(([f, c]) => `${f} ${c.toLowerCase().replaceAll("_", " ")}`).join(", ")}${bad.length && missing ? ", " : ""}${missing ? `${missing} missing` : ""}`
-      : "All inputs valid";
-
-    paint();
-    renderSheet(frame.t);
-  }
-
-  // Statuses, flags, 3D highlight and model card for the current hour (every hour, as on main).
-  function paint() {
-    const frame = state.data.frames[state.frame];
-    if (!frame || state.painted === state.frame) return;
-    state.painted = state.frame;
-    const counts = { precision: 0, transformer: 0 };
-    state.data.iots.forEach((iot, i) => {
-      const el = $(`iot-${iot.slot}`), status = frame.s[i];
-      setStatusClass(el, status);
-      el.querySelector(".state").textContent = status ? LABEL[status] : "No data";
-      if (status && status !== "NORMAL") counts[MONITORS[iot.slot].group]++;
-    });
-    // trend flags raised up to the playback hour (needs the backend's analytics)
-    for (const [key, info] of Object.entries(TREND_FLAGS)) {
-      const a = state.data.analytics && state.data.analytics[key];
-      if (!a) continue;
-      const card = $(`iot-${a.slot}`), raised = a.flags.some((f) => Date.parse(f.detected_at) <= Date.parse(frame.t));
-      card.classList.toggle("flagged", raised);
-      const badge = card.querySelector(".flag");
-      badge.textContent = info.badge; badge.title = info.title;
-    }
-    const total = (g) => state.data.iots.filter((iot) => MONITORS[iot.slot].group === g).length;
-    $("count-precision").textContent = counts.precision ? `${counts.precision} of ${total("precision")} need attention` : "All within limits";
-    $("count-transformer").textContent = counts.transformer ? `${counts.transformer} of ${total("transformer")} need attention` : "All within limits";
-    const overall = worst(frame.s);
-    setStatusClass($("overall"), overall);
-    $("overall").textContent = overall ? (overall === "NORMAL" ? "All monitors normal"
-      : `Overall: ${LABEL[overall]} · ${counts.precision + counts.transformer} active`) : "No data";
-    twin.setStatuses(frame.s);
-    renderModel(frame);
-  }
-
-  function renderModel(frame) {
-    if (frame.m === state.model) return;
-    state.model = frame.m;
-    const slot = frame.m === "base" ? null : Number(frame.m.replace("iot", ""));
-    const status = slot ? frame.s[slot - 1] : null;
-    $("model-name").textContent = slot ? `${MONITORS[slot].name} · ${state.data.models[frame.m]}` : state.data.models.base;
-    $("model-signal").textContent = slot ? `${GROUP[MONITORS[slot].group].short} · ${LABEL[status]}` : "All monitors normal";
-    setStatusClass($("model-viewport"), status);
-    twin.focus(slot);
-    signal(frame.id);
-  }
-
-  // Tell FastAPI the shown model changed; it calls the Blender bridge. One request in flight.
-  async function signal(readingId) {
-    if (state.signalBusy) { state.signalPending = readingId; return; }
-    state.signalBusy = true;
-    try {
-      const res = await fetch(`${API}/twin3d/signal`, {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ reading_id: readingId, source: "timeline" }),
-      }).then((r) => r.json());
-      if (res.model_call) {
-        const c = res.model_call;
-        $("model-call").textContent = `${c.action}(${c.model_id}) ← ${c.previous_model ?? "none"} · ${c.model.blend_file} · ${c.status}`;
-      }
-    } catch (e) {
-      $("model-call").textContent = "Signal failed: " + e.message;
-    } finally {
-      state.signalBusy = false;
-      if (state.signalPending != null) { const next = state.signalPending; state.signalPending = null; signal(next); }
-    }
-  }
-
-  function renderSheet(iso) {
-    const until = new Date(iso).getTime();
-    // Sheet is sorted by check_no (= date order); find how many checks are opened by now.
-    let lo = 0, hi = state.sheet.length;
-    while (lo < hi) { const mid = (lo + hi) >> 1; if (new Date(state.sheet[mid].opened_at).getTime() <= until) lo = mid + 1; else hi = mid; }
-    $("maint-count").textContent = `· ${lo.toLocaleString()} of ${state.sheet.length.toLocaleString()}`;
-    const shown = (c) => state.filter === "all" || MONITORS[c.iot].group === state.filter;
-    // pin the latest trend flag (e.g. accelerating oil leak) above the routine checks
-    const recent = [];
-    let pinned = null;
-    for (let i = lo - 1; i >= 0; i--) if (state.sheet[i].flag) { pinned = state.sheet[i]; break; }
-    if (pinned && shown(pinned)) recent.push(pinned);
-    for (let i = lo - 1; i >= 0 && recent.length < 40; i--) {
-      const c = state.sheet[i];
-      if (c !== pinned && shown(c)) recent.push(c);
-    }
-    $("maint-list").innerHTML = recent.length ? recent.map((c) => {
-      const m = MONITORS[c.iot];
-      const resolved = c.resolved_at && new Date(c.resolved_at).getTime() <= until;
-      return `<div class="check s-${c.signal}${c.flag ? " pinned" : ""}">
-        <span class="no">#${c.check_no}</span><span class="what">${m.name} · ${LABEL[c.signal]}</span>
-        <span class="tags"><span class="tag">${GROUP[m.group].short}</span>${c.flag ? `<span class="tag flagtag">Pinned · ${FLAG_LABEL[c.flag] || c.flag}</span>` : ""}</span>
-        <span class="action">${c.recommended_action}</span>
-        <span class="when">${c.date} ${c.time_utc} UTC · ${resolved ? `resolved after ${c.duration_hours} h` : "open"}</span>
-      </div>`;
-    }).join("") : `<div class="empty">No checks yet.</div>`;
-  }
-
-  document.querySelectorAll(".filters [data-filter]").forEach((b) => (b.onclick = () => {
-    document.querySelectorAll(".filters [data-filter]").forEach((x) => x.setAttribute("aria-pressed", x === b));
-    state.filter = b.dataset.filter;
-    if (state.data) renderSheet(state.data.frames[state.frame].t);
-  }));
-
-  // ---------- playback: one hourly frame every state.tick seconds at 1x ----------
-  // Wall-clock based, so speed stays exact even if the browser throttles the timer.
-  function tick() {
-    if (!state.data || !Number.isFinite(state.pos)) return setPlaying(false);
-    const now = performance.now();
-    const dt = (now - state.last) / 1000;
-    state.last = now;
-    const max = state.data.frames.length - 1;
-    state.pos = Math.min(max, state.pos + (dt / state.tick) * SPEEDS[state.speed]);
-    render();
-    if (state.pos >= max) setPlaying(false);
-  }
-  function setPlaying(on) {
-    if (on && state.pos >= state.data.frames.length - 1) state.pos = 0;
-    state.playing = on;
-    $("play").innerHTML = on ? "&#10074;&#10074;" : "&#9654;";
-    clearInterval(state.timer);
-    if (on) { state.last = performance.now(); state.timer = setInterval(tick, 1000 / 30); }
-  }
-  const seek = (pos) => { state.pos = Math.max(0, Math.min(state.data.frames.length - 1, pos)); render(); };
 
   // Reset view: hand the camera back to the alerts (or the whole model when all is normal)
   const resetView = () => {
-    const slot = state.model && state.model !== "base" ? Number(state.model.replace("iot", "")) : null;
+    const slot = window.TimebarsApp && TimebarsApp.currentSlot;
     if (twin.release) twin.release();
     if (slot) twin.focus(slot); else twin.resetView();
   };
   $("view-reset").onclick = resetView;
 
-  // ---------- free navigation: pad (hold to repeat) + keyboard over the model ----------
+  // ---------- free navigation: pad (one step per click, hold to repeat) + keyboard ----------
   const NAV = {
     up: () => twin.pan(0, 1), down: () => twin.pan(0, -1), left: () => twin.pan(-1, 0), right: () => twin.pan(1, 0),
     fwd: () => twin.move(1), back: () => twin.move(-1), zin: () => twin.zoom(0.9), zout: () => twin.zoom(1.1),
   };
-  let navTimer = null;
-  let navHold = null;
+  let navTimer = null, navHold = null;
   const stopNav = () => { clearTimeout(navHold); clearInterval(navTimer); navHold = navTimer = null; };
   document.querySelectorAll(".nav [data-nav]").forEach((b) => {
     const act = b.dataset.nav;
     if (act === "home") { b.onclick = resetView; return; }
     if (!twin.pan) { b.disabled = true; b.title = "Reload the page (Ctrl+F5): an old copy of twin3d.js is cached"; return; }
-    // one step per click; holding the button repeats after a short pause
     b.addEventListener("pointerdown", (e) => {
       e.preventDefault(); stopNav(); NAV[act]();
       navHold = setTimeout(() => (navTimer = setInterval(NAV[act], 60)), 350);
@@ -835,15 +547,15 @@
   document.addEventListener("keydown", (e) => {
     if (!twin.pan || e.ctrlKey || e.metaKey || e.altKey) return;
     if (e.target instanceof Element && e.target.matches("input, textarea, select")) return;
-    if (!$("metric-overlay").hidden) return;
+    if (!$("tb-modal").hidden) return;
     const key = e.key.length === 1 ? e.key.toLowerCase() : e.key;
     if (key === "r") { resetView(); e.preventDefault(); return; }
     if (KEYS[key]) { NAV[KEYS[key]](); e.preventDefault(); }
   });
   const linkView = new URLSearchParams(location.search).get("view");
-  if (linkView) document.querySelectorAll(".seg [data-mode]").forEach((x) => x.setAttribute("aria-pressed", x.dataset.mode === linkView));
-  document.querySelectorAll(".seg [data-mode]").forEach((b) => (b.onclick = () => {
-    document.querySelectorAll(".seg [data-mode]").forEach((x) => x.setAttribute("aria-pressed", x === b));
+  if (linkView) document.querySelectorAll(".model-bar .seg [data-mode]").forEach((x) => x.setAttribute("aria-pressed", x.dataset.mode === linkView));
+  document.querySelectorAll(".model-bar .seg [data-mode]").forEach((b) => (b.onclick = () => {
+    document.querySelectorAll(".model-bar .seg [data-mode]").forEach((x) => x.setAttribute("aria-pressed", x === b));
     twin.setMode(b.dataset.mode);
   }));
   $("explode-btn").onclick = () => twin.explode(1, true);
@@ -851,56 +563,9 @@
   $("oil-toggle").onchange = (e) => twin.setOil(e.target.checked);
   $("labels-toggle").onchange = (e) => twin.setLabels(e.target.checked);
   $("view-spin").onclick = () => { $("view-spin").textContent = twin.toggleSpin() ? "Stop" : "Spin"; };
-  $("play").onclick = () => setPlaying(!state.playing);
-  $("back").onclick = () => seek(Math.floor(state.pos) - 24);
-  $("fwd").onclick = () => seek(Math.floor(state.pos) + 24);
-  const showRate = () => {
-    const k = SPEEDS[state.speed], secs = +(state.tick / k).toPrecision(3);
-    $("speed").textContent = `${k}×`;
-    $("rate").textContent = `1 hour every ${secs} s` + (k === 1 ? "" : ` (${state.tick} s at ${k}×)`);
-  };
-  $("speed").onclick = () => { state.speed = (state.speed + 1) % SPEEDS.length; showRate(); };
-  $("tick").addEventListener("change", (e) => {
-    const v = Number(e.target.value);
-    state.tick = Number.isFinite(v) && v > 0 ? Math.min(60, Math.max(0.01, v)) : DEFAULT_TICK_S;
-    e.target.value = state.tick;
-    showRate();
-  });
 
-  const track = $("track");
-  const scrub = (e) => { const r = track.getBoundingClientRect(); seek(((e.clientX - r.left) / r.width) * (state.data.frames.length - 1)); };
-  track.addEventListener("pointerdown", (e) => { if (!state.data) return; track.setPointerCapture(e.pointerId); scrub(e); });
-  track.addEventListener("pointermove", (e) => { if (track.hasPointerCapture(e.pointerId)) scrub(e); });
-
-  // ---------- data drop: upload CSV, validated server-side ----------
-  const drop = $("drop");
-  async function upload(file) {
-    if (!file) return;
-    $("drop-result").textContent = `Uploading ${file.name}…`;
-    const form = new FormData();
-    form.append("file", file);
-    form.append("transformer_id", state.data?.transformer_id || "T1");
-    try {
-      const res = await fetch(`${API}/upload`, { method: "POST", body: form });
-      const body = await res.json();
-      if (!res.ok) throw new Error(body.detail || res.statusText);
-      const issues = Object.entries(body.issues).map(([k, v]) => `${v} ${k.toLowerCase().replaceAll("_", " ")}`).join(", ");
-      $("drop-result").textContent = `${body.stored} stored, ${body.rejected} rejected${issues ? ` · ${issues}` : ""}`;
-      setPlaying(false);
-      await load(body.transformers[0]);
-    } catch (e) {
-      $("drop-result").textContent = "Upload failed: " + e.message;
-    }
-  }
-  drop.addEventListener("dragover", (e) => { e.preventDefault(); drop.classList.add("over"); });
-  drop.addEventListener("dragleave", () => drop.classList.remove("over"));
-  drop.addEventListener("drop", (e) => { e.preventDefault(); drop.classList.remove("over"); upload(e.dataTransfer.files[0]); });
-  $("file").addEventListener("change", (e) => upload(e.target.files[0]));
-
-  fetch(`${API}/transformers`).then((r) => r.json()).then((list) => {
-    if (!list.length) { $("status").textContent = "No data: run scripts/simulate.py or drop a CSV"; return; }
-    return load(list[0].transformer_id);
-  }).catch((e) => { $("status").textContent = "API unavailable: " + e.message; });
+  // the two timebars drive the cards, the signal list, the graphs and the 3D model
+  TimebarsApp.start({ twin }).catch((e) => { $("status").textContent = "API unavailable: " + e.message; });
 })();
 </script>
 </body>

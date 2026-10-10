@@ -7,3 +7,4 @@ data/maintenance/
 twin_pg/
 twin_pg.log
 .venv/
+data/twin2/
