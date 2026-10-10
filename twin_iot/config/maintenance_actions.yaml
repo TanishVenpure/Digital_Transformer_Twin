@@ -9,6 +9,7 @@ actions:
     WARNING: "Review loading; plan load transfer if current keeps approaching rated value."
     PREDICTED_MAINTENANCE: "Schedule load management before current reaches rated value."
     CRITICAL: "Reduce load immediately; inspect transformer for overload damage."
+    LOAD_GROWTH: "Demand is growing: confirm against the same season last year, then plan load transfer to a neighbouring transformer, phase balancing or a capacity upgrade before peaks exceed rating regularly."
   voltage_deviation:
     WARNING: "Check tap position and supply voltage regulation."
     PREDICTED_MAINTENANCE: "Schedule tap-changer / regulation check before the voltage band is breached."
@@ -17,6 +18,7 @@ actions:
     WARNING: "Inspect for oil leaks and plan an oil top-up."
     PREDICTED_MAINTENANCE: "Schedule leak repair and oil top-up before minimum level is reached."
     CRITICAL: "Top up oil and repair leak immediately; check Buchholz relay."
+    ACCELERATING_OIL_LEAK: "Oil loss is speeding up between top-ups: inspect gaskets, valve seals, radiator joints and bushing seals, and plan gasket replacement instead of another top-up."
   top_oil_temperature:
     WARNING: "Check cooling (fans, radiators) and loading."
     PREDICTED_MAINTENANCE: "Schedule cooling-system check before the trip temperature is reached."
@@ -25,3 +27,4 @@ actions:
     WARNING: "Check cooling and loading; review winding temperature trend."
     PREDICTED_MAINTENANCE: "Schedule thermal inspection before winding rise limit is reached."
     CRITICAL: "Reduce load immediately; inspect windings and insulation for overheating."
+    WINDING_EXCESS_HEATING: "Winding is hotter than its load explains: check oil condition and DGA (CO, CO2, furans), inspect winding cooling ducts and oil flow for blockage or sludge, and limit peak loading until the cause is found."

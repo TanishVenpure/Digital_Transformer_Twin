@@ -37,6 +37,8 @@ class IoTRule(BaseModel):
     predicted_message: str | None = None
     parameters: dict[str, float] = Field(default_factory=dict)
     extra_checks: list[ExtraCheck] = Field(default_factory=list)
+    # False = monitored for quality only (alerts + status), never written to the maintenance sheet
+    maintenance_sheet: bool = True
 
     @property
     def worse_when_higher(self) -> bool:

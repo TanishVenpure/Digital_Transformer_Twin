@@ -1,0 +1,29 @@
+# Trend analytics that look across maintenance cycles rather than single readings.
+oil_leak:
+  refill_jump: 10.0     # % of gauge rise between consecutive readings = an oil top-up
+  settle_hours: 2       # skip readings right after a top-up when fitting the leak slope
+  min_points: 24        # hourly readings needed before a cycle's leak rate is trusted
+  min_increase: 0.15    # flag when the leak rate grows >= 15 % per refill cycle ...
+  consecutive: 2        # ... for 2 cycle-to-cycle steps in a row (3 rated cycles)
+
+load_growth:            # warning / critical come from thresholds.yaml (current_loading)
+  window_days: 28       # daily peaks used for the trend line
+  review_days: 7        # weekly load review
+  min_growth_per_day: 0.1   # % of rated per day on the daily-peak trend
+  min_overload_hours: 2.0   # latest week must have at least this many overload hours ...
+  consecutive: 2            # ... and more than the week before, 2 weeks in a row
+
+winding_thermal:        # IEC 60076-7 style model, ONAN distribution transformer (generic defaults:
+                        # calibrate against the heat-run test report before trusting absolute values)
+  top_oil_rise_rated: 30.0    # K at rated load
+  gradient_rated: 15.0        # hot-spot to top-oil gradient at rated load, K
+  loss_ratio: 5.0             # R
+  oil_exponent: 0.8           # x
+  winding_exponent: 1.6       # y
+  tau_oil_min: 180.0
+  tau_winding_min: 4.0
+  ageing_reference_c: 98.0    # relative ageing rate 1 at this hot-spot (non-thermally-upgraded paper)
+  ageing_doubling_k: 6.0      # ageing doubles for every 6 K above it
+  review_days: 7
+  min_excess: 1.5             # flag when the winding runs >= 1.5 K above the model ...
+  consecutive: 2              # ... and the excess has grown 2 weeks in a row

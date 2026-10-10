@@ -71,7 +71,17 @@ CREATE TABLE IF NOT EXISTS maintenance_log (
     text                TEXT NOT NULL,
     PRIMARY KEY (transformer_id, check_no)
 );
+CREATE TABLE IF NOT EXISTS maintenance_events (
+    id              BIGSERIAL PRIMARY KEY,
+    transformer_id  TEXT NOT NULL,
+    ts              TIMESTAMPTZ NOT NULL,
+    iot_slot        SMALLINT NOT NULL,
+    action          TEXT NOT NULL,
+    source          TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS maintenance_events_transformer_ts ON maintenance_events (transformer_id, ts);
 CREATE INDEX IF NOT EXISTS readings_transformer_ts ON readings (transformer_id, ts);
+ALTER TABLE maintenance_log ADD COLUMN IF NOT EXISTS flag TEXT NOT NULL DEFAULT '';
 CREATE INDEX IF NOT EXISTS alerts_transformer_ts ON alerts (transformer_id, ts);
 """
 
@@ -97,6 +107,7 @@ def create_schema(connection) -> None:
 def clear_transformer(connection, transformer_id: str) -> None:
     with connection.cursor() as cursor:
         cursor.execute("DELETE FROM readings WHERE transformer_id = %s", (transformer_id,))
+        cursor.execute("DELETE FROM maintenance_events WHERE transformer_id = %s", (transformer_id,))
 
 
 def store(connection, processed: ProcessedReading, selection: ModelSelection) -> int | None:
@@ -180,7 +191,9 @@ def reading_detail(connection, reading_id: int) -> dict | None:
 
 def rebuild_maintenance(connection, transformer_id: str, thresholds, actions) -> list[dict]:
     """Re-derive the sequential maintenance sheet from stored evaluations and alerts."""
-    from app.maintenance.sheet import build_checks, iot_names
+    from app.analytics import load_growth, winding
+    from app.analytics.oil_leak import analyse, load_config
+    from app.maintenance.sheet import add_trend_flags, build_checks, iot_names
     with connection.cursor() as cursor:
         cursor.execute("""
             SELECT r.id, r.ts, json_agg(json_build_array(e.iot_slot, e.status) ORDER BY e.iot_slot)
@@ -194,18 +207,69 @@ def rebuild_maintenance(connection, transformer_id: str, thresholds, actions) ->
             alerts.setdefault((reading_id, slot), []).append({
                 "signal": signal, "value": value, "threshold": threshold, "comparison_operator": comparison,
                 "unit": unit, "maintenance_type": maintenance_type})
-        checks = build_checks(rows, alerts, transformer_id=transformer_id, actions=actions, names=iot_names(thresholds))
+        names = iot_names(thresholds)
+        quality_only = {rule.iot_slot for rule in thresholds.values() if not rule.maintenance_sheet}
+        rows = [(rid, ts, [e for e in evs if e[0] not in quality_only]) for rid, ts, evs in rows]
+        checks = build_checks(rows, alerts, transformer_id=transformer_id, actions=actions, names=names)
+        # cycle-trend flags: accelerating oil leak (oil level = IoT slot 5)
+        oil_slot = thresholds["oil_level"].iot_slot
+        leak = analyse(oil_series(connection, transformer_id, oil_slot), load_config())
+        checks = add_trend_flags(
+            checks, leak.flags, transformer_id=transformer_id, slot=oil_slot, names=names,
+            action=actions.get("oil_level", {}).get("ACCELERATING_OIL_LEAK", "Inspect seals and gaskets."),
+            reading_at={ts: rid for rid, ts, _ in rows},
+        )
+        # cycle-trend flags: load growth (current loading = IoT slot 3)
+        load_rule = thresholds["current_loading"]
+        growth = load_growth.analyse(
+            oil_series(connection, transformer_id, load_rule.iot_slot),
+            load_growth.load_config(warning=load_rule.warning, critical=load_rule.critical),
+        )
+        checks = add_trend_flags(
+            checks, growth["flags"], transformer_id=transformer_id, slot=load_rule.iot_slot, names=names,
+            action=actions.get("current_loading", {}).get("LOAD_GROWTH", "Plan load transfer or capacity upgrade."),
+            reading_at={ts: rid for rid, ts, _ in rows},
+        )
+        # cycle-trend flags: winding running hotter than its load explains (winding = slot 7)
+        wind_rule = thresholds["winding_temperature"]
+        thermal = winding.analyse(winding_inputs(connection, transformer_id, wind_rule.iot_slot, load_rule.iot_slot),
+                                  winding.load_config())
+        checks = add_trend_flags(
+            checks, thermal["flags"], transformer_id=transformer_id, slot=wind_rule.iot_slot, names=names,
+            action=actions.get("winding_temperature", {}).get("WINDING_EXCESS_HEATING", "Inspect winding cooling."),
+            reading_at={ts: rid for rid, ts, _ in rows},
+        )
         cursor.execute("DELETE FROM maintenance_log WHERE transformer_id = %s", (transformer_id,))
         if checks:
             execute_values(cursor, """INSERT INTO maintenance_log (transformer_id, check_no, opened_at, iot_slot,
                 iot_name, signal, previous_status, measured_value, threshold, comparison_operator, unit,
-                maintenance_type, recommended_action, status, resolved_at, duration_hours, reading_id, text)
+                maintenance_type, recommended_action, status, resolved_at, duration_hours, reading_id, text, flag)
                 VALUES %s""", [
                 (c["transformer_id"], c["check_no"], c["opened_at"], c["iot"], c["iot_name"], c["signal"],
                  c["previous_status"], c["measured_value"], c["threshold"], c["comparison"], c["unit"],
                  c["maintenance_type"], c["recommended_action"], c["status"], c["resolved_at"],
-                 c["duration_hours"], c["reading_id"], c["text"]) for c in checks])
+                 c["duration_hours"], c["reading_id"], c["text"], c.get("flag", "")) for c in checks])
     return checks
+
+
+def oil_series(connection, transformer_id: str, slot: int) -> list[tuple]:
+    """(timestamp, monitored value) of one IoT slot for every stored hour; None where the input was invalid."""
+    with connection.cursor() as cursor:
+        cursor.execute("""SELECT r.ts, e.value FROM readings r JOIN iot_evaluations e ON e.reading_id = r.id
+                          WHERE r.transformer_id = %s AND e.iot_slot = %s ORDER BY r.ts""", (transformer_id, slot))
+        return cursor.fetchall()
+
+
+def winding_inputs(connection, transformer_id: str, winding_slot: int, load_slot: int) -> list[tuple]:
+    """(timestamp, winding hot-spot rise K, loading % of rated, ambient degC) for every stored hour."""
+    with connection.cursor() as cursor:
+        cursor.execute("""
+            SELECT r.ts, ew.value, el.value, (r.clean_data->>'ambient_temperature')::float
+            FROM readings r
+            LEFT JOIN iot_evaluations ew ON ew.reading_id = r.id AND ew.iot_slot = %s
+            LEFT JOIN iot_evaluations el ON el.reading_id = r.id AND el.iot_slot = %s
+            WHERE r.transformer_id = %s ORDER BY r.ts""", (winding_slot, load_slot, transformer_id))
+        return cursor.fetchall()
 
 
 def maintenance_sheet(connection, transformer_id: str, *, until=None, iot: int | None = None,
@@ -213,7 +277,7 @@ def maintenance_sheet(connection, transformer_id: str, *, until=None, iot: int |
     from app.maintenance.sheet import SHEET_FIELDS
     query = """SELECT check_no, transformer_id, to_char(opened_at AT TIME ZONE 'UTC', 'YYYY-MM-DD') AS date,
                       to_char(opened_at AT TIME ZONE 'UTC', 'HH24:MI') AS time_utc, opened_at, iot_slot AS iot,
-                      iot_name, signal, previous_status, measured_value, threshold,
+                      iot_name, signal, flag, previous_status, measured_value, threshold,
                       comparison_operator AS comparison, unit, maintenance_type, recommended_action, status,
                       resolved_at, duration_hours, reading_id, text
                FROM maintenance_log WHERE transformer_id = %s"""
@@ -239,6 +303,21 @@ def maintenance_sheet(connection, transformer_id: str, *, until=None, iot: int |
         for key in ("opened_at", "resolved_at"):
             row[key] = row[key].isoformat() if row[key] is not None else None
     return [{field: row[field] for field in SHEET_FIELDS} for row in rows]
+
+
+def store_events(connection, rows: list[tuple]) -> None:
+    """rows: (transformer_id, ts, iot_slot, action, source) - maintenance actually performed."""
+    if rows:
+        with connection.cursor() as cursor:
+            execute_values(cursor, "INSERT INTO maintenance_events (transformer_id, ts, iot_slot, action, source) VALUES %s", rows)
+
+
+def maintenance_events(connection, transformer_id: str) -> list[dict]:
+    with connection.cursor() as cursor:
+        cursor.execute("""SELECT ts, iot_slot, action, source FROM maintenance_events
+                          WHERE transformer_id = %s ORDER BY ts, iot_slot""", (transformer_id,))
+        return [{"ts": ts.isoformat(), "iot": slot, "action": action, "source": source}
+                for ts, slot, action, source in cursor.fetchall()]
 
 
 def recent_alerts(connection, transformer_id: str, limit: int = 50) -> list[dict]:

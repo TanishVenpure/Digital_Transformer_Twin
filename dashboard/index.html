@@ -4,400 +4,560 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Transformer Twin Dashboard</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap">
 <style>
   :root {
-    --bg: #0f1419;
-    --panel: #171d24;
-    --panel-2: #1e252e;
-    --border: #2a333e;
-    --text: #e6edf3;
-    --muted: #8b98a5;
-    --accent: #3fa7ff;
-    --track: #262f3a;
-    --placeholder: #3a4552;
-    --normal: #3fb950;
-    --warning: #d29922;
-    --predicted: #a371f7;
-    --maintenance: #f0883e;
-    --critical: #f85149;
+    --bg: #0a0e13;
+    --bg-2: #0e131a;
+    --panel: #121922;
+    --panel-2: #18212c;
+    --panel-3: #1e2935;
+    --border: #233040;
+    --border-2: #2e3d50;
+    --text: #e8eef5;
+    --muted: #8d9bab;
+    --faint: #5f6d7d;
+    --accent: #38bdf8;
+    --track: #1c2632;
+    --normal: #34d399;
+    --warning: #fbbf24;
+    --predicted: #a78bfa;
+    --maintenance: #fb923c;
+    --critical: #f87171;
+    --nodata: #4b5867;
+    --precision: #818cf8;
+    --transformer: #2dd4bf;
+    --radius: 12px;
+    --font: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    --mono: "JetBrains Mono", ui-monospace, Consolas, monospace;
+    color-scheme: dark;
   }
   * { box-sizing: border-box; }
-  html, body { height: 100%; margin: 0; }
+  html, body { min-height: 100%; margin: 0; }
   body {
-    background: var(--bg);
+    background: radial-gradient(1200px 600px at 70% -10%, #13202e 0%, transparent 60%), var(--bg);
     color: var(--text);
-    font: 14px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    font: 14px/1.45 var(--font);
     display: flex;
     flex-direction: column;
-  }
-
-  header {
-    padding: 12px 20px;
-    border-bottom: 1px solid var(--border);
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 12px;
-  }
-  header h1 { font-size: 16px; margin: 0; font-weight: 600; }
-  header .status { color: var(--muted); font-size: 12px; }
-
-  .layout {
-    flex: 1;
-    min-height: 0;
-    display: grid;
-    grid-template-columns: 1fr 380px;
-    grid-template-rows: 1fr auto;
-    gap: 12px;
-    padding: 12px;
-  }
-
-  .panel {
-    background: var(--panel);
-    border: 1px solid var(--border);
-    border-radius: 10px;
-    display: flex;
-    flex-direction: column;
-    min-height: 0;
-  }
-  .panel-title {
-    padding: 10px 14px;
-    border-bottom: 1px solid var(--border);
-    font-size: 12px;
-    text-transform: uppercase;
-    letter-spacing: .06em;
-    color: var(--muted);
-    display: flex;
-    justify-content: space-between;
-    gap: 8px;
-  }
-  .panel-title a { color: var(--accent); text-decoration: none; text-transform: none; letter-spacing: 0; }
-
-  /* ---------- Left column: health bars + 3D model ---------- */
-  .left { display: flex; flex-direction: column; gap: 12px; min-height: 0; }
-
-  .health-grid {
-    display: grid;
-    grid-template-columns: repeat(7, 1fr);
-    gap: 10px;
-    padding: 12px 14px;
-  }
-  .health {
-    background: var(--panel-2);
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    padding: 8px 10px;
-    min-width: 0;
-  }
-  .health .row { display: flex; justify-content: space-between; align-items: baseline; gap: 4px; }
-  .health .name { font-weight: 600; font-size: 13px; }
-  .health .value { color: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; white-space: nowrap; }
-  .health .sub { color: var(--muted); font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin: 2px 0 6px; }
-  .health .state { font-size: 11px; font-weight: 600; margin-top: 6px; color: var(--muted); }
-  .bar { height: 8px; background: var(--track); border-radius: 4px; overflow: hidden; }
-  .bar > span { display: block; height: 100%; width: 0; background: var(--placeholder); transition: width .15s, background-color .15s; }
-
-  .model { flex: 1; }
-  .model-body {
-    flex: 1;
-    position: relative;
-    margin: 10px;
-    min-height: 240px;
-    border: 2px solid var(--border);
-    border-radius: 8px;
-    overflow: hidden;
-    transition: border-color .2s;
-  }
-  .model-body canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
-  .model-info {
-    position: absolute; left: 10px; top: 10px; z-index: 2;
-    background: rgba(15, 20, 25, .82); border: 1px solid var(--border); border-radius: 8px;
-    padding: 8px 12px; max-width: calc(100% - 20px); pointer-events: none;
-  }
-  .model-name { font-size: 15px; font-weight: 600; color: var(--text); }
-  .model-signal { font-size: 12px; font-weight: 600; }
-  .model-call { font: 11px/1.4 ui-monospace, Consolas, monospace; color: var(--muted); overflow-wrap: anywhere; margin-top: 2px; }
-  .model-loading { position: absolute; inset: 0; display: grid; place-items: center; color: var(--muted); font-size: 12px; pointer-events: none; }
-  .model-loading:empty { display: none; }
-  .panel-title .tools { display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-end; }
-  .panel-title { flex-wrap: wrap; align-items: center; }
-  .panel-title .tools button { padding: 2px 8px; font-size: 11px; text-transform: none; letter-spacing: 0; }
-  .chips { position: absolute; inset: 0; pointer-events: none; overflow: hidden; z-index: 1; }
-  .chip {
-    position: absolute; left: 0; top: 0; display: flex; align-items: center; gap: 4px;
-    padding: 1px 6px 1px 4px; border-radius: 3px; white-space: nowrap; pointer-events: auto; cursor: pointer;
-    font: 500 10px/1.5 ui-monospace, Consolas, monospace; color: var(--text);
-    background: rgba(10, 13, 16, .8); border: 1px solid color-mix(in srgb, var(--c, #5c6773) 60%, transparent);
-    transition: opacity .2s;
-  }
-  .seg { display: flex; }
-  .seg button { border-radius: 0; margin-left: -1px; }
-  .seg button:first-child { border-radius: 6px 0 0 6px; margin-left: 0; }
-  .seg button:last-child { border-radius: 0 6px 6px 0; }
-  .seg button[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: #06121f; }
-  .model-bar {
-    position: absolute; left: 10px; right: 10px; bottom: 10px; z-index: 2;
-    display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px;
-    background: rgba(15, 20, 25, .82); border: 1px solid var(--border); border-radius: 8px; padding: 6px 10px;
-    font-size: 11px; color: var(--muted);
-  }
-  .model-bar button { padding: 3px 10px; font-size: 11px; }
-  .model-bar .explode { display: flex; align-items: center; gap: 8px; flex: 1 1 180px; min-width: 0; }
-  .model-bar input[type=range] { flex: 1; min-width: 0; accent-color: var(--accent); }
-  .model-bar output { color: var(--text); font-variant-numeric: tabular-nums; min-width: 4ch; text-align: right; }
-  .model-bar label.check { display: flex; align-items: center; gap: 4px; cursor: pointer; }
-  .model-bar input[type=checkbox] { accent-color: var(--accent); }
-  .chip i { width: 7px; height: 7px; border-radius: 50%; background: var(--c, #5c6773); }
-  .chip.dim { opacity: .25; }
-
-  /* ---------- Right column: LLM + maintenance ---------- */
-  .right { display: flex; flex-direction: column; gap: 12px; min-height: 0; }
-  .chat { flex: 1 1 50%; }
-  .chat-body {
-    flex: 1;
-    padding: 14px;
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
-    overflow: auto;
-  }
-  .msg {
-    max-width: 85%;
-    padding: 8px 12px;
-    border-radius: 10px;
-    background: var(--panel-2);
-    border: 1px solid var(--border);
-    color: var(--muted);
-  }
-  .msg.user { align-self: flex-end; }
-  .chat-input {
-    display: flex;
-    gap: 8px;
-    padding: 12px 14px;
-    border-top: 1px solid var(--border);
-  }
-  .chat-input input {
-    flex: 1;
-    min-width: 0;
-    background: var(--panel-2);
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    padding: 8px 10px;
-    color: var(--text);
+    -webkit-font-smoothing: antialiased;
   }
   button {
-    background: var(--panel-2);
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    padding: 8px 14px;
-    color: var(--text);
-    cursor: pointer;
-    font: inherit;
+    font: inherit; color: var(--text); background: var(--panel-2);
+    border: 1px solid var(--border-2); border-radius: 8px; padding: 7px 12px; cursor: pointer;
+    transition: background-color .15s, border-color .15s;
   }
-  button:hover:not(:disabled) { border-color: var(--accent); }
-  button:disabled { color: var(--muted); cursor: not-allowed; }
+  button:hover:not(:disabled) { background: var(--panel-3); border-color: #3c4f66; }
+  button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  button:disabled { color: var(--faint); cursor: not-allowed; }
 
-  .maint { flex: 1 1 50%; }
-  .maint-list { flex: 1; overflow: auto; padding: 6px 0; min-height: 120px; }
-  .check {
-    display: grid;
-    grid-template-columns: auto 1fr;
-    gap: 2px 10px;
-    padding: 7px 14px;
-    border-bottom: 1px solid var(--border);
-    font-size: 12px;
-  }
-  .check .no { color: var(--muted); font-variant-numeric: tabular-nums; }
-  .check .what { font-weight: 600; }
-  .check .action { grid-column: 2; color: var(--muted); }
-  .check .when { grid-column: 2; color: var(--muted); font-size: 11px; }
-  .empty { color: var(--muted); padding: 14px; font-size: 12px; }
-
-  /* ---------- Bottom: data drop + timeline ---------- */
-  .bottom {
-    grid-column: 1 / -1;
-    display: grid;
-    grid-template-columns: 280px 1fr;
-    gap: 12px;
-  }
-  .drop {
-    margin: 14px;
-    flex: 1;
-    border: 2px dashed var(--border);
-    border-radius: 8px;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    gap: 4px;
-    padding: 16px;
-    color: var(--muted);
-    text-align: center;
-    cursor: pointer;
-  }
-  .drop.over { border-color: var(--accent); color: var(--text); }
-  .drop small { font-size: 11px; }
-  .drop .result { font-size: 11px; color: var(--text); }
-
-  .timeline-body { padding: 14px; display: flex; flex-direction: column; gap: 12px; }
-  .controls { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-  .controls .time { margin-left: auto; color: var(--muted); font-variant-numeric: tabular-nums; }
-  .issues { color: var(--muted); font-size: 12px; min-height: 18px; }
-  .issues b { color: var(--warning); font-weight: 600; }
-  .track {
-    position: relative;
-    height: 10px;
-    background: var(--track);
-    border-radius: 5px;
-    cursor: pointer;
-    touch-action: none;
-  }
-  .track .fill { position: absolute; left: 0; top: 0; bottom: 0; width: 0; background: var(--accent); opacity: .35; border-radius: 5px; }
-  .track .knob {
-    position: absolute;
-    left: 0;
-    top: 50%;
-    width: 16px;
-    height: 16px;
-    border-radius: 50%;
-    background: var(--accent);
-    transform: translate(-50%, -50%);
-  }
-  .ticks { display: flex; justify-content: space-between; color: var(--muted); font-size: 11px; }
-
+  /* status colour hook: any element with s-STATUS gets --c */
   .s-NORMAL { --c: var(--normal); }
   .s-WARNING { --c: var(--warning); }
   .s-PREDICTED_MAINTENANCE { --c: var(--predicted); }
   .s-MAINTENANCE_REQUIRED { --c: var(--maintenance); }
   .s-CRITICAL { --c: var(--critical); }
-  .health[class*="s-"] .bar > span { background: var(--c); }
-  .health[class*="s-"] .state, .check[class*="s-"] .what, .model-signal { color: var(--c, var(--muted)); }
-  .model-body[class*="s-"] { border-color: var(--c); }
+  .s-NONE { --c: var(--nodata); }
 
-  @media (max-width: 1100px) {
-    .health-grid { grid-template-columns: repeat(4, 1fr); }
+  .pill {
+    display: inline-flex; align-items: center; gap: 6px; white-space: nowrap;
+    font-size: 11px; font-weight: 600; letter-spacing: .02em;
+    padding: 3px 9px 3px 7px; border-radius: 999px;
+    color: var(--c, var(--muted));
+    background: color-mix(in srgb, var(--c, var(--muted)) 14%, transparent);
+    border: 1px solid color-mix(in srgb, var(--c, var(--muted)) 35%, transparent);
   }
-  .layout > *, .bottom > * { min-width: 0; }
+  .pill::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--c, var(--muted)); }
+  .s-CRITICAL.pill::before { animation: blink 1s steps(2) infinite; }
+  @keyframes blink { 50% { opacity: .25; } }
+
+  .tag {
+    display: inline-flex; align-items: center; gap: 6px; white-space: nowrap;
+    font-size: 10.5px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase;
+    padding: 3px 8px; border-radius: 6px;
+    color: var(--g); background: color-mix(in srgb, var(--g) 12%, transparent);
+    border: 1px solid color-mix(in srgb, var(--g) 30%, transparent);
+  }
+  .g-precision { --g: var(--precision); }
+  .g-transformer { --g: var(--transformer); }
+
+  /* ---------- header ---------- */
+  header {
+    display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
+    padding: 7px 18px; border-bottom: 1px solid var(--border);
+    background: color-mix(in srgb, var(--bg) 70%, transparent); backdrop-filter: blur(8px);
+  }
+  .brand { display: flex; align-items: center; gap: 12px; min-width: 0; }
+  .logo {
+    width: 32px; height: 32px; border-radius: 9px; flex: none; display: grid; place-items: center;
+    background: linear-gradient(135deg, #1b3a52, #123047); border: 1px solid #2a5272;
+  }
+  .brand h1 { margin: 0; font-size: 15px; font-weight: 700; letter-spacing: -.01em; }
+  .brand .sub { color: var(--muted); font-size: 12px; font-family: var(--mono); }
+  .head-right { margin-left: auto; display: flex; align-items: center; gap: 14px; flex-wrap: wrap; justify-content: flex-end; }
+  .clock { text-align: right; }
+  .clock b { display: block; font: 600 14px var(--mono); letter-spacing: -.01em; }
+  .clock span { color: var(--muted); font-size: 11.5px; }
+  .overall { font-size: 12px; padding: 6px 12px 6px 10px; }
+
+  /* ---------- layout ---------- */
+  main {
+    flex: 1; display: grid; gap: 10px; padding: 10px 18px 12px;
+    grid-template-columns: minmax(0, 1.5fr) minmax(400px, 1fr);
+    grid-template-rows: auto auto auto;
+    grid-template-areas: "health health" "model side" "time time";
+  }
+  .panel {
+    background: linear-gradient(180deg, var(--panel) 0%, var(--bg-2) 100%);
+    border: 1px solid var(--border); border-radius: var(--radius);
+    display: flex; flex-direction: column; min-height: 0; min-width: 0;
+    box-shadow: 0 1px 0 rgba(255,255,255,.03) inset, 0 8px 24px rgba(0,0,0,.25);
+  }
+  .panel-head {
+    display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap;
+    padding: 8px 14px; border-bottom: 1px solid var(--border);
+  }
+  .panel-head h2 { margin: 0; font-size: 13px; font-weight: 600; letter-spacing: .01em; display: flex; align-items: center; gap: 8px; }
+  .panel-head .meta { color: var(--muted); font-size: 12px; }
+
+  /* ---------- health ---------- */
+  .health-wrap { grid-area: health; display: grid; grid-template-columns: 2fr 5fr; gap: 10px; }
+  .group { padding: 9px 12px 11px; }
+  .group-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 7px; }
+  .group-head .count { color: var(--muted); font-size: 11.5px; }
+  .cards { display: grid; gap: 8px; }
+  .group.precision .cards { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .group.transformer .cards { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+  .card {
+    position: relative; overflow: hidden; min-width: 0;
+    background: var(--panel-2); border: 1px solid var(--border); border-radius: 10px;
+    padding: 8px 10px 9px; display: flex; flex-direction: column; gap: 4px;
+    transition: border-color .2s, background-color .2s;
+  }
+  .card::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 3px; background: var(--c, var(--nodata)); }
+  .card[class*="s-"]:not(.s-NORMAL):not(.s-NONE) { border-color: color-mix(in srgb, var(--c) 40%, var(--border)); background: color-mix(in srgb, var(--c) 6%, var(--panel-2)); }
+  .card { cursor: pointer; }
+  .card:hover { border-color: #3c4f66; transform: translateY(-1px); }
+  .card:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .card .open { position: absolute; right: 10px; top: 10px; color: var(--faint); font-size: 12px; transition: color .15s; }
+  .card:hover .open { color: var(--accent); }
+  .card .name { padding-right: 18px; font-weight: 600; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .card .metric { color: var(--muted); font-size: 10.5px; margin-top: -3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .card .value { font: 600 19px/1.1 var(--mono); letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
+  .card .value small { font-size: 12px; color: var(--muted); font-weight: 500; margin-left: 2px; }
+  .card .vrow { display: flex; align-items: center; justify-content: space-between; gap: 6px; min-width: 0; }
+  .card .vrow .pill { font-size: 10.5px; padding: 2px 8px 2px 6px; }
+  .card .brow { display: flex; align-items: center; gap: 8px; }
+  .card .brow .bar { flex: 1; }
+  .card .health { color: var(--muted); font: 500 10.5px var(--mono); white-space: nowrap; }
+  .bar { height: 5px; background: var(--track); border-radius: 3px; overflow: hidden; }
+  .bar > span { display: block; height: 100%; width: 0; background: var(--c, var(--nodata)); transition: width .2s, background-color .2s; }
+
+  /* ---------- 3D ---------- */
+  .model { grid-area: model; }
+  .seg { display: inline-flex; }
+  .seg button { border-radius: 0; margin-left: -1px; padding: 5px 10px; font-size: 12px; }
+  .seg button:first-child { border-radius: 8px 0 0 8px; margin-left: 0; }
+  .seg button:last-child { border-radius: 0 8px 8px 0; }
+  .seg button[aria-pressed="true"] { background: color-mix(in srgb, var(--accent) 22%, var(--panel-2)); border-color: color-mix(in srgb, var(--accent) 60%, transparent); color: #d9f2ff; }
+  .tools { display: flex; gap: 6px; flex-wrap: wrap; }
+  .view-tools { position: absolute; right: 12px; top: 12px; z-index: 3; padding: 6px; }
+  .tools > button { padding: 5px 10px; font-size: 12px; }
+  .model-body {
+    position: relative; aspect-ratio: 4 / 3; max-height: 82vh; margin: 8px; border-radius: 10px; overflow: hidden;
+    background: radial-gradient(800px 400px at 50% 30%, #152232, #0b1017 70%);
+    border: 1px solid var(--border); transition: box-shadow .3s, border-color .3s;
+  }
+  .model-body[class*="s-"]:not(.s-NORMAL) { border-color: color-mix(in srgb, var(--c) 55%, var(--border)); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--c) 25%, transparent), inset 0 0 60px color-mix(in srgb, var(--c) 10%, transparent); }
+  .model-body canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
+  .glass { background: rgba(12, 17, 24, .78); border: 1px solid var(--border-2); border-radius: 10px; backdrop-filter: blur(6px); }
+  .model-info { position: absolute; left: 12px; top: 12px; z-index: 2; padding: 8px 12px; max-width: min(400px, calc(100% - 250px)); pointer-events: none; display: grid; gap: 6px; }
+  .model-info .row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .model-name { font-size: 15px; font-weight: 700; letter-spacing: -.01em; }
+  .model-call { font: 11px/1.4 var(--mono); color: var(--faint); overflow-wrap: anywhere; }
+  .model-loading { position: absolute; inset: 0; display: grid; place-items: center; color: var(--muted); font-size: 12px; pointer-events: none; }
+  .model-loading:empty { display: none; }
+  .model-bar { position: absolute; left: 10px; right: 10px; bottom: 10px; z-index: 2; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; padding: 6px 10px; font-size: 12px; color: var(--muted); }
+  .model-bar button { padding: 4px 10px; font-size: 12px; }
+  .model-bar .seg button { padding: 4px 9px; }
+  .model-bar .explode { display: flex; align-items: center; gap: 8px; flex: 1 1 90px; min-width: 70px; }
+  .model-bar input[type=range] { flex: 1; min-width: 0; accent-color: var(--accent); }
+  .model-bar output { color: var(--text); font: 500 12px var(--mono); min-width: 4ch; text-align: right; }
+  .model-bar label.check { display: flex; align-items: center; gap: 5px; cursor: pointer; }
+  .model-bar input[type=checkbox] { accent-color: var(--accent); }
+  .nav {
+    position: absolute; right: 12px; top: 12px; z-index: 2; padding: 7px;
+    display: grid; gap: 4px; grid-template-columns: repeat(3, 28px) 6px 44px 28px; grid-template-rows: repeat(3, 28px);
+    grid-template-areas: ". up . . fwd zin" "left home right . back zout" ". down . . spin spin";
+  }
+  .nav button { width: 100%; height: 28px; padding: 0; display: grid; place-items: center; font-size: 12px; line-height: 1; border-radius: 7px; user-select: none; touch-action: none; }
+  .nav [data-nav="up"] { grid-area: up; } .nav [data-nav="down"] { grid-area: down; }
+  .nav [data-nav="left"] { grid-area: left; } .nav [data-nav="right"] { grid-area: right; }
+  .nav [data-nav="home"] { grid-area: home; } .nav [data-nav="fwd"] { grid-area: fwd; font-size: 11px; }
+  .nav [data-nav="back"] { grid-area: back; font-size: 11px; } .nav [data-nav="zin"] { grid-area: zin; font-size: 15px; }
+  .nav [data-nav="zout"] { grid-area: zout; font-size: 15px; }
+  .nav [data-spin] { grid-area: spin; font-size: 11px; }
+  .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+  .free { display: none; font-size: 11px; color: var(--accent); }
+  .model-body.manual .free { display: inline; }
+  .model-body:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .chips { position: absolute; inset: 0; pointer-events: none; overflow: hidden; z-index: 1; }
+  .chip {
+    position: absolute; left: 0; top: 0; display: flex; align-items: center; gap: 4px;
+    padding: 1px 6px 1px 4px; border-radius: 4px; white-space: nowrap; pointer-events: auto; cursor: pointer;
+    font: 500 10px/1.5 var(--mono); color: var(--text);
+    background: rgba(8, 12, 17, .82); border: 1px solid color-mix(in srgb, var(--c, #5c6773) 60%, transparent);
+    transition: opacity .2s;
+  }
+  .chip i { width: 7px; height: 7px; border-radius: 50%; background: var(--c, #5c6773); }
+  .chip.dim { opacity: .22; }
+
+  /* ---------- side: maintenance + assistant ---------- */
+  .side { grid-area: side; display: flex; flex-direction: column; gap: 14px; min-height: 0; contain: size; }
+  .maint { flex: 1 1 auto; min-height: 0; }
+  .filters { display: flex; gap: 6px; padding: 8px 14px 0; flex-wrap: wrap; }
+  .filters button { padding: 4px 10px; font-size: 11.5px; border-radius: 999px; }
+  .filters button[aria-pressed="true"] { background: color-mix(in srgb, var(--accent) 18%, var(--panel-2)); border-color: color-mix(in srgb, var(--accent) 55%, transparent); }
+  .maint-list { flex: 1; overflow: auto; padding: 6px 10px 8px; min-height: 0; display: flex; flex-direction: column; gap: 6px; }
+  .check {
+    background: var(--panel-2); border: 1px solid var(--border); border-radius: 9px;
+    padding: 7px 10px; display: grid; gap: 3px; font-size: 12px; position: relative;
+  }
+  .check .top { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .check .no { color: var(--faint); font: 500 11px var(--mono); }
+  .check .what { font-weight: 600; font-size: 12.5px; }
+  .check .action { color: var(--muted); }
+  .check .when { color: var(--faint); font-size: 11px; font-family: var(--mono); }
+  .empty { color: var(--muted); padding: 16px; font-size: 12px; text-align: center; }
+  a.link { color: var(--accent); text-decoration: none; font-size: 12px; }
+  a.link:hover { text-decoration: underline; }
+
+  .chat { flex: 0 0 auto; }
+  .chat-body { padding: 10px 14px 8px; display: flex; flex-direction: column; gap: 6px; overflow: auto; max-height: 120px; }
+  .msg { max-width: 88%; padding: 9px 12px; border-radius: 12px; background: var(--panel-2); border: 1px solid var(--border); color: var(--muted); font-size: 13px; }
+  .msg.user { align-self: flex-end; background: color-mix(in srgb, var(--accent) 10%, var(--panel-2)); }
+  .suggest { display: flex; gap: 6px; flex-wrap: wrap; }
+  .suggest span { font-size: 11.5px; color: var(--muted); border: 1px dashed var(--border-2); border-radius: 999px; padding: 3px 10px; }
+  .chat-input { display: flex; gap: 8px; padding: 8px 14px; border-top: 1px solid var(--border); }
+  .chat-input input { flex: 1; min-width: 0; background: var(--panel-2); border: 1px solid var(--border-2); border-radius: 8px; padding: 8px 11px; color: var(--text); font: inherit; }
+
+  /* ---------- timeline ---------- */
+  .timeline { grid-area: time; }
+  .time-body { display: grid; grid-template-columns: 220px minmax(0, 1fr); gap: 14px; padding: 8px 14px 10px; align-items: stretch; }
+  .drop {
+    border: 1.5px dashed var(--border-2); border-radius: 10px; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; gap: 1px; padding: 6px 10px; color: var(--muted);
+    text-align: center; cursor: pointer; transition: border-color .15s, background-color .15s; font-size: 12.5px;
+  }
+  .drop:hover, .drop.over { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 6%, transparent); color: var(--text); }
+  .drop small { font-size: 10.5px; color: var(--faint); }
+  .drop .result { font-size: 11px; color: var(--text); }
+  .player { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+  .controls { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .controls button { width: 34px; height: 28px; padding: 0; display: grid; place-items: center; }
+  .controls #play { width: 42px; background: color-mix(in srgb, var(--accent) 20%, var(--panel-2)); border-color: color-mix(in srgb, var(--accent) 50%, transparent); }
+  .controls #speed { width: auto; padding: 0 12px; font: 500 12px var(--mono); }
+  .controls .time { color: var(--text); font: 500 12px var(--mono); margin-left: 6px; white-space: nowrap; }
+  .controls .issues { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1 1 120px; }
+  .controls .legend { margin-left: auto; }
+  .track { position: relative; height: 18px; cursor: pointer; touch-action: none; }
+  .track canvas { position: absolute; left: 0; right: 0; top: 5px; height: 8px; width: 100%; border-radius: 4px; background: var(--track); }
+  .track .knob {
+    position: absolute; left: 0; top: 50%; width: 4px; height: 18px; border-radius: 2px;
+    background: #fff; box-shadow: 0 0 0 3px rgba(56,189,248,.35), 0 0 12px rgba(56,189,248,.6); transform: translate(-50%, -50%);
+  }
+  .ticks { display: flex; justify-content: space-between; color: var(--faint); font: 11px var(--mono); }
+  .legend { display: flex; gap: 12px; flex-wrap: wrap; color: var(--muted); font-size: 11px; }
+  .legend span { display: inline-flex; align-items: center; gap: 5px; }
+  .legend i { width: 9px; height: 9px; border-radius: 2px; background: var(--c); }
+  .issues { color: var(--muted); font-size: 11.5px; min-height: 16px; }
+  .issues b { color: var(--warning); font-weight: 600; }
+
+  /* ---------- metric graph overlay ---------- */
+  .overlay[hidden] { display: none; }
+  .overlay {
+    position: fixed; inset: 0; z-index: 50; display: grid; place-items: center; padding: 24px;
+    background: rgba(4, 7, 11, .72); backdrop-filter: blur(4px);
+  }
+  .sheet {
+    width: min(1180px, 100%); max-height: calc(100vh - 48px); overflow: auto;
+    background: linear-gradient(180deg, var(--panel) 0%, var(--bg-2) 100%);
+    border: 1px solid var(--border-2); border-radius: 14px; box-shadow: 0 24px 80px rgba(0,0,0,.6);
+    display: flex; flex-direction: column;
+  }
+  .sheet-head { display: flex; align-items: flex-start; gap: 14px; padding: 16px 18px; border-bottom: 1px solid var(--border); flex-wrap: wrap; }
+  .sheet-head h2 { margin: 0; font-size: 18px; font-weight: 700; letter-spacing: -.01em; }
+  .sheet-head .sub { color: var(--muted); font-size: 12px; margin-top: 4px; }
+  .sheet-head .badges { display: flex; gap: 8px; align-items: center; margin-top: 8px; flex-wrap: wrap; }
+  .sheet-head .right { margin-left: auto; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .sheet-head .seg button { padding: 5px 10px; font-size: 12px; }
+  #metric-close { width: 34px; height: 34px; padding: 0; font-size: 18px; line-height: 1; }
+  .stats { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 10px; padding: 14px 18px 4px; }
+  .stat { background: var(--panel-2); border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; display: grid; gap: 2px; min-width: 0; }
+  .stat span { color: var(--muted); font-size: 11px; }
+  .stat b { font: 600 20px var(--mono); letter-spacing: -.02em; }
+  .stat small { color: var(--faint); font-size: 10.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .chart-legend { display: flex; gap: 14px; flex-wrap: wrap; padding: 10px 18px 0; color: var(--muted); font-size: 11.5px; }
+  .chart-legend span { display: inline-flex; align-items: center; gap: 6px; }
+  .chart-legend span[hidden] { display: none; }
+  .chart-legend .inv { color: var(--accent); }
+  .chart-legend .ln { width: 16px; height: 0; border-top: 2px solid #38bdf8; }
+  .chart-legend .dash { width: 16px; height: 0; border-top: 2px dashed var(--c); }
+  .chart-legend .tri { width: 0; height: 0; border-left: 5px solid transparent; border-right: 5px solid transparent; border-top: 7px solid var(--muted); }
+  .chart-legend .mnt { width: 13px; height: 13px; border-radius: 50%; border: 1.5px solid var(--text); font: 700 8px/10px var(--font); text-align: center; color: var(--text); }
+  .plot { position: relative; height: 360px; margin: 6px 10px 0; }
+  .plot svg { width: 100%; height: 100%; display: block; }
+  .plot .ax { fill: var(--faint); font: 11px var(--mono); }
+  .plot .lim { fill: var(--text); font: 600 11px var(--font); }
+  .plot .wrench { fill: var(--text); font: 700 9px var(--font); pointer-events: none; }
+  .plot .cyc { fill: var(--muted); font: 500 11px var(--mono); }
+  .banner { margin: 12px 18px 0; padding: 9px 12px; border-radius: 9px; font-size: 12.5px; color: var(--muted);
+    background: var(--panel-2); border: 1px solid var(--border); }
+  .banner b { color: var(--text); }
+  .banner.alert { color: #fde3c4; background: color-mix(in srgb, var(--maintenance) 12%, var(--panel-2));
+    border-color: color-mix(in srgb, var(--maintenance) 45%, transparent); }
+  .banner.alert b { color: var(--maintenance); }
+  .card .flag { display: none; align-self: flex-start; margin-top: -3px; font-size: 9.5px; font-weight: 700; letter-spacing: .04em;
+    text-transform: uppercase; color: var(--maintenance); background: color-mix(in srgb, var(--maintenance) 14%, transparent);
+    border: 1px solid color-mix(in srgb, var(--maintenance) 45%, transparent); border-radius: 5px; padding: 1px 5px; line-height: 1.35; }
+  .card.flagged .flag { display: inline-block; }
+  .card.flagged .metric { display: none; }
+  .check.pinned { border-color: color-mix(in srgb, var(--maintenance) 45%, var(--border)); background: color-mix(in srgb, var(--maintenance) 7%, var(--panel-2)); }
+  .flagtag { color: var(--maintenance); background: color-mix(in srgb, var(--maintenance) 12%, transparent);
+    border: 1px solid color-mix(in srgb, var(--maintenance) 40%, transparent); }
+  .tip[hidden] { display: none; }
+  .tip {
+    position: absolute; z-index: 3; width: 220px; pointer-events: none; display: grid; gap: 4px;
+    background: rgba(10, 14, 20, .95); border: 1px solid var(--border-2); border-radius: 8px; padding: 8px 10px; font-size: 12px;
+  }
+  .tip time { color: var(--muted); font: 11px var(--mono); }
+  .tip .pill { justify-self: start; }
+  .tip .rep { color: var(--text); border-top: 1px solid var(--border); padding-top: 4px; }
+  .repairs { padding: 6px 18px 18px; }
+  .repairs h3 { margin: 6px 0 8px; font-size: 13px; font-weight: 600; }
+  .repairs ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; max-height: 160px; overflow: auto; }
+  .repairs li { display: flex; gap: 12px; font-size: 12px; background: var(--panel-2); border: 1px solid var(--border); border-radius: 8px; padding: 7px 10px; }
+  .repairs li time { color: var(--muted); font-family: var(--mono); white-space: nowrap; }
+  .repairs li.none { color: var(--muted); }
   @media (max-width: 900px) {
+    .stats { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .plot { height: 300px; }
+    .overlay { padding: 10px; }
+  }
+  @media (max-width: 520px) {
+    .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .sheet-head .right { margin-left: 0; width: 100%; }
+  }
+
+  /* ---------- fit the window on desktop (no page scroll) ---------- */
+  @media (min-width: 1001px) and (min-height: 640px) {
+    html, body { height: 100%; overflow: hidden; }
+    main { min-height: 0; grid-template-rows: auto minmax(0, 1fr) auto; }
+    .model { min-height: 0; }
+    .model-body { aspect-ratio: auto; max-height: none; flex: 1; min-height: 0; }
+    /* side column: assistant gets the larger share, maintenance sheet scrolls in the rest */
+    .maint { flex: 2 1 0; min-height: 200px; }
+    .chat { flex: 3 1 0; min-height: 0; }
+    .chat-body { flex: 1; max-height: none; min-height: 0; }
+  }
+
+  /* ---------- responsive ---------- */
+  @media (max-width: 1280px) {
+    .health-wrap { grid-template-columns: 1fr; }
+  }
+  @media (max-width: 1000px) {
+    .group.transformer .cards { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    main { grid-template-columns: minmax(0, 1fr); grid-template-areas: "health" "model" "side" "time"; }
+    .side { contain: none; }
+    .maint { min-height: 0; }
+    .maint-list { max-height: 420px; }
+  }
+  @media (max-width: 720px) {
     html, body { height: auto; }
-    header { flex-wrap: wrap; padding: 12px 16px; }
-    .layout { display: flex; flex-direction: column; padding: 12px 16px; }
-    .left, .right { min-height: auto; }
-    .model { flex: none; }
-    .health-grid { grid-template-columns: repeat(2, 1fr); }
-    .bottom { display: flex; flex-direction: column; }
-    .maint-list { max-height: 360px; }
-    .model-body { min-height: 340px; flex: none; }
-    .chat { min-height: 300px; }
-    .maint { min-height: 320px; }
+    header { padding: 12px 16px; }
+    .head-right { margin-left: 0; justify-content: flex-start; width: 100%; }
+    .clock { text-align: left; }
+    main { padding: 12px 16px 16px; display: flex; flex-direction: column; }
+    .group.precision .cards, .group.transformer .cards { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .time-body { grid-template-columns: 1fr; }
+    .maint-list { max-height: 380px; }
+    .card .value { font-size: 19px; }
+    .card .name, .card .metric { white-space: normal; }
+    .group-head { flex-wrap: wrap; }
   }
 </style>
 </head>
 <body>
 
 <header>
-  <h1>Digital Transformer Twin</h1>
-  <span class="status" id="status">Connecting…</span>
+  <div class="brand">
+    <div class="logo" aria-hidden="true">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#7dd3fc" stroke-width="1.8" stroke-linecap="round">
+        <rect x="4" y="7" width="16" height="12" rx="2"/><path d="M8 7V4M12 7V3M16 7V4M8 19v2M16 19v2"/><path d="M9 11v4M12 11v4M15 11v4"/>
+      </svg>
+    </div>
+    <div>
+      <h1>Digital Transformer Twin</h1>
+      <div class="sub" id="sub">630 kVA · 11 / 0.433 kV · connecting…</div>
+    </div>
+  </div>
+  <div class="head-right">
+    <div class="clock"><b id="clock">--</b><span id="clock-sub">waiting for data</span></div>
+    <span class="pill overall" id="overall">No data</span>
+  </div>
 </header>
 
-<main class="layout">
-
-  <!-- Left: health bars on top, 3D model below -->
-  <section class="left">
-    <div class="panel">
-      <div class="panel-title"><span>Sensor health</span><span id="transformer"></span></div>
-      <div class="health-grid" id="health-grid"></div>
+<main>
+  <!-- Health: two maintenance groups -->
+  <section class="health-wrap">
+    <div class="panel group precision">
+      <div class="group-head"><span class="tag g-precision">Precision Measurement Maintenance</span><span class="count" id="count-precision"></span></div>
+      <div class="cards" id="cards-precision"></div>
     </div>
+    <div class="panel group transformer">
+      <div class="group-head"><span class="tag g-transformer">Transformer Maintenance</span><span class="count" id="count-transformer"></span></div>
+      <div class="cards" id="cards-transformer"></div>
+    </div>
+  </section>
 
-    <div class="panel model">
-      <div class="panel-title">
-        <span>3D model</span>
-        <span class="tools">
-          <span class="seg" role="group" aria-label="Tank view">
-            <button data-mode="solid" aria-pressed="false">Solid</button><button data-mode="cut" aria-pressed="false">Cutaway</button><button data-mode="xray" aria-pressed="true">X-ray</button>
-          </span>
-          <button id="view-spin">Spin</button><button id="view-reset" title="Back to the signalled view">Reset view</button>
-        </span>
+  <!-- 3D model -->
+  <section class="panel model">
+    <div class="model-body" id="model-viewport" tabindex="0" aria-label="3D transformer model. Arrow keys / WASD move, Q and E move down and up, plus and minus zoom, R resets.">
+      <div class="model-info glass">
+        <div class="row"><span class="model-name" id="model-name">Base transformer</span></div>
+        <div class="row"><span class="tag" id="model-group" hidden></span><span class="pill s-NORMAL" id="model-signal">All monitors normal</span></div>
+        <div class="model-call" id="model-call"></div>
+        <div class="free">Free navigation · alerts won't move the camera · Reset view to follow</div>
       </div>
-      <div class="model-body" id="model-viewport">
-        <div class="model-info">
-          <div class="model-name" id="model-name">Base transformer</div>
-          <div class="model-signal" id="model-signal">All IoTs normal</div>
-          <div class="model-call" id="model-call"></div>
-        </div>
-        <div class="model-loading" id="model-loading"></div>
-        <div class="model-bar">
-          <button id="explode-btn">Explode</button>
-          <label class="explode" for="explode">Exploded
-            <input type="range" id="explode" min="0" max="100" value="0">
-            <output id="explode-v" for="explode">0%</output>
-          </label>
-          <label class="check"><input type="checkbox" id="oil-toggle" checked> Oil</label>
-          <label class="check"><input type="checkbox" id="labels-toggle" checked> Labels</label>
-        </div>
+      <div class="nav glass" role="group" aria-label="Move the camera">
+        <button data-nav="up" title="Move up (Up arrow / E)" aria-label="Move up">&#9650;</button>
+        <button data-nav="left" title="Move left (Left arrow / A)" aria-label="Move left">&#9664;</button>
+        <button data-nav="home" title="Reset view (R)" aria-label="Reset view">&#9673;</button>
+        <button data-nav="right" title="Move right (Right arrow / D)" aria-label="Move right">&#9654;</button>
+        <button data-nav="down" title="Move down (Down arrow / Q)" aria-label="Move down">&#9660;</button>
+        <button data-nav="fwd" title="Go forward into the model (W)">Fwd</button>
+        <button data-nav="back" title="Go back (S)">Back</button>
+        <button data-nav="zin" title="Zoom in (+ / scroll)" aria-label="Zoom in">+</button>
+        <button data-nav="zout" title="Zoom out (- / scroll)" aria-label="Zoom out">&minus;</button>
+        <button id="view-spin" data-spin title="Spin the model">Spin</button>
+      </div>
+      <div class="model-loading" id="model-loading"></div>
+      <div class="model-bar glass">
+        <span class="seg" role="group" aria-label="Tank view">
+          <button data-mode="solid" aria-pressed="false">Solid</button><button data-mode="cut" aria-pressed="false">Cutaway</button><button data-mode="xray" aria-pressed="true">X-ray</button>
+        </span>
+        <button id="explode-btn">Explode</button>
+        <label class="explode" for="explode"><span class="sr">Exploded</span>
+          <input type="range" id="explode" min="0" max="100" value="0">
+          <output id="explode-v" for="explode">0%</output>
+        </label>
+        <label class="check"><input type="checkbox" id="oil-toggle" checked> Oil</label>
+        <label class="check"><input type="checkbox" id="labels-toggle" checked> Labels</label>
       </div>
     </div>
   </section>
 
-  <!-- Right: LLM assistant + maintenance sheet -->
-  <aside class="right">
+  <!-- Maintenance sheet + assistant -->
+  <aside class="side">
+    <div class="panel maint">
+      <div class="panel-head">
+        <h2>Maintenance Sheet <span class="meta" id="maint-count"></span></h2>
+        <a class="link" id="maint-download" href="#" download>Download CSV</a>
+      </div>
+      <div class="filters" role="group" aria-label="Filter maintenance checks">
+        <button data-filter="all" aria-pressed="true">All</button>
+        <button data-filter="precision" aria-pressed="false">Precision Measurement</button>
+        <button data-filter="transformer" aria-pressed="false">Transformer</button>
+      </div>
+      <div class="maint-list" id="maint-list"><div class="empty">No checks yet.</div></div>
+    </div>
+
     <div class="panel chat">
-      <div class="panel-title">Assistant</div>
+      <div class="panel-head"><h2>Assistant</h2><span class="meta">LLM + RAG coming soon</span></div>
       <div class="chat-body">
-        <div class="msg">Assistant responses will appear here.</div>
-        <div class="msg user">User question placeholder</div>
+        <div class="msg">Ask about the transformer's condition, past maintenance or what to check next.</div>
+        <div class="suggest"><span>Open maintenance checks</span><span>Worst monitor today</span><span>Oil trend</span></div>
       </div>
       <div class="chat-input">
         <input type="text" placeholder="Ask about the transformer…" disabled>
         <button disabled>Send</button>
       </div>
     </div>
-
-    <div class="panel maint">
-      <div class="panel-title">
-        <span>Maintenance sheet <span id="maint-count"></span></span>
-        <a id="maint-download" href="#" download>CSV</a>
-      </div>
-      <div class="maint-list" id="maint-list"><div class="empty">No checks yet.</div></div>
-    </div>
   </aside>
 
-  <!-- Bottom: data drop + time-series timeline -->
-  <section class="bottom">
-    <div class="panel">
-      <div class="panel-title">Data</div>
+  <!-- Data + timeline -->
+  <section class="panel timeline">
+    <div class="time-body">
       <label class="drop" id="drop">
-        <span>Drop data file here</span>
-        <small>CSV · hourly readings · validated on upload</small>
+        <span>Drop CSV data here</span>
+        <small>hourly readings · validated on upload</small>
         <span class="result" id="drop-result"></span>
         <input type="file" id="file" accept=".csv" hidden>
       </label>
-    </div>
-
-    <div class="panel">
-      <div class="panel-title"><span>Timeline</span><span>1 day / second at 1×</span></div>
-      <div class="timeline-body">
+      <div class="player">
         <div class="controls">
-          <button id="back" title="Back one day" disabled>&#9198;</button>
-          <button id="play" title="Play / pause" disabled>&#9654;</button>
-          <button id="fwd" title="Forward one day" disabled>&#9197;</button>
-          <button id="speed" title="Playback speed" disabled>1×</button>
-          <span class="time" id="time">--:-- / --:--</span>
+          <button id="back" title="Back one day" aria-label="Back one day" disabled>&#9198;</button>
+          <button id="play" title="Play / pause" aria-label="Play" disabled>&#9654;</button>
+          <button id="fwd" title="Forward one day" aria-label="Forward one day" disabled>&#9197;</button>
+          <button id="speed" title="Playback speed (1× = 1 day per second)" disabled>1×</button>
+          <span class="time" id="time">--</span>
+          <span class="issues" id="issues"></span>
+          <span class="legend">
+            <span class="s-NORMAL"><i></i>Normal</span><span class="s-WARNING"><i></i>Warning</span>
+            <span class="s-PREDICTED_MAINTENANCE"><i></i>Predicted</span><span class="s-MAINTENANCE_REQUIRED"><i></i>Maintenance</span>
+            <span class="s-CRITICAL"><i></i>Critical</span>
+          </span>
         </div>
-        <div class="track" id="track"><span class="fill" id="fill"></span><span class="knob" id="knob"></span></div>
+        <div class="track" id="track"><canvas id="strip"></canvas><span class="knob" id="knob"></span></div>
         <div class="ticks" id="ticks"><span>start</span><span></span><span></span><span></span><span>end</span></div>
-        <div class="issues" id="issues"></div>
       </div>
     </div>
   </section>
-
 </main>
+
+<div class="overlay" id="metric-overlay" hidden role="dialog" aria-modal="true" aria-labelledby="metric-title">
+  <div class="sheet">
+    <div class="sheet-head">
+      <div>
+        <h2 id="metric-title">Metric</h2>
+        <div class="sub" id="metric-sub"></div>
+        <div class="badges"><span class="tag" id="metric-group"></span><span class="pill" id="metric-status"></span></div>
+      </div>
+      <div class="right">
+        <span class="seg" id="metric-view" role="group" aria-label="Chart view">
+          <button data-view="health" aria-pressed="true">Health %</button><button data-view="value" aria-pressed="false">Measured value</button>
+        </span>
+        <span class="seg" id="metric-range" role="group" aria-label="Time range">
+          <button data-range="7d" aria-pressed="true">7 days</button><button data-range="30d" aria-pressed="false">30 days</button><button data-range="all" aria-pressed="false">All</button>
+        </span>
+        <button id="metric-close" aria-label="Close graph">&times;</button>
+      </div>
+    </div>
+    <div class="banner" id="metric-banner" hidden></div>
+    <div class="stats" id="metric-stats"></div>
+    <div class="chart-legend">
+      <span><i class="ln"></i>Metric</span>
+      <span class="s-WARNING"><i class="dash"></i>Warning limit</span>
+      <span class="s-CRITICAL"><i class="dash"></i>Critical limit</span>
+      <span><i class="tri"></i>Maintenance check raised (colour = signal)</span>
+      <span><i class="mnt">M</i>Maintenance performed</span>
+      <span id="legend-inverted" hidden class="inv">&#8595; Axis inverted: higher values are plotted lower, so heading toward the limit reads as a decline</span>
+      <span id="legend-expected" hidden><i class="dash" style="--c:#e8eef5"></i>Expected at this load (thermal model)</span>
+      <span id="legend-trend" hidden><i class="ln" style="border-top-color:#e8eef5"></i>Daily-peak trend (dashed = projection)</span>
+      <span>Strip below = status per hour</span>
+    </div>
+    <div class="plot" id="metric-plot"><svg id="metric-svg" role="img" aria-label="Metric health over time"></svg><div class="tip" id="metric-tip" hidden></div></div>
+    <div class="repairs"><h3>Maintenance performed in this window</h3><ul id="metric-repairs"></ul></div>
+  </div>
+</div>
 
 <script src="vendor/three/three.min.js"></script>
 <script src="vendor/three/GLTFLoader.js"></script>
 <script src="vendor/three/OrbitControls.js"></script>
 <script src="vendor/three/RoomEnvironment.js"></script>
 <script src="twin3d.js"></script>
+<script src="metric-chart.js"></script>
 <script>
 (() => {
   const API = "/api";
@@ -405,40 +565,97 @@
   // Provisional bar fill per status until the Health Engine provides a score.
   const FILL = { NORMAL: 100, WARNING: 65, PREDICTED_MAINTENANCE: 50, MAINTENANCE_REQUIRED: 30, CRITICAL: 12 };
   const LABEL = { NORMAL: "Normal", WARNING: "Warning", PREDICTED_MAINTENANCE: "Predicted", MAINTENANCE_REQUIRED: "Maintenance", CRITICAL: "Critical" };
-  const SHORT_NAME = ["Current sensor", "Voltage sensor", "Current", "Voltage", "Oil level", "Top-oil temp", "Winding temp"];
-  const UNIT = { percent: "%", percent_of_rated: "%", percent_deviation: "%", percent_of_gauge: "%", degC: "°C", K_rise_over_ambient: "K" };
+  const RANK = { NORMAL: 0, WARNING: 1, PREDICTED_MAINTENANCE: 2, MAINTENANCE_REQUIRED: 3, CRITICAL: 4 };
+  const COLOR = { NORMAL: "#34d399", WARNING: "#fbbf24", PREDICTED_MAINTENANCE: "#a78bfa", MAINTENANCE_REQUIRED: "#fb923c", CRITICAL: "#f87171" };
+  // Monitor names and maintenance groups, by slot (1..7).
+  const MONITORS = {
+    1: { name: "Current Sensor", metric: "Instrument error vs reference", group: "precision", fmt: (v) => [v.toFixed(2), "%"] },
+    2: { name: "Voltage Sensor", metric: "Instrument error vs reference", group: "precision", fmt: (v) => [v.toFixed(2), "%"] },
+    3: { name: "Current", metric: "Load, % of rated current", group: "transformer", fmt: (v) => [v.toFixed(1), "%"] },
+    4: { name: "Voltage", metric: "Supply deviation (external grid)", group: "transformer", fmt: (v) => ["±" + v.toFixed(1), "%"] },
+    5: { name: "Oil Level", metric: "Conservator gauge", group: "transformer", fmt: (v) => [v.toFixed(1), "%"] },
+    6: { name: "Top-Oil Temperature", metric: "Top-oil, absolute", group: "transformer", fmt: (v) => [v.toFixed(1), "°C"] },
+    7: { name: "Winding Temperature", metric: "Hottest phase rise over ambient", group: "transformer", fmt: (v) => [v.toFixed(1), "K"] },
+  };
+  const TREND_FLAGS = {
+    oil_leak: { flag: "ACCELERATING_OIL_LEAK", badge: "Leak accelerating", label: "Accelerating oil leak",
+      title: "Each oil top-up is lasting less time: oil loss is accelerating" },
+    load_growth: { flag: "LOAD_GROWTH", badge: "Load growing", label: "Load growth",
+      title: "Overloads are becoming more frequent: demand is growing toward the transformer's rating" },
+    winding: { flag: "WINDING_EXCESS_HEATING", badge: "Running hot", label: "Winding excess heating",
+      title: "The winding is hotter than its load explains: possible restricted oil flow or winding fault" },
+  };
+  const FLAG_LABEL = Object.fromEntries(Object.values(TREND_FLAGS).map((f) => [f.flag, f.label]));
+  const GROUP = {
+    precision: { label: "Precision Measurement Maintenance", short: "Precision Measurement" },
+    transformer: { label: "Transformer Maintenance", short: "Transformer" },
+  };
 
   const $ = (id) => document.getElementById(id);
   const twin = window.Twin3D
-    ? Twin3D.create(document.getElementById("model-viewport"), {
-        onStatus: (t) => (document.getElementById("model-loading").textContent = t),
+    ? Twin3D.create($("model-viewport"), {
+        onStatus: (t) => ($("model-loading").textContent = t),
         // link options: ?view=solid|cut|xray  ?explode=0..100 (skips the intro)  ?intro=0
         mode: new URLSearchParams(location.search).get("view") || undefined,
         noIntro: /(^|[?&])(intro=0|explode=)/.test(location.search),
         t: (Number(new URLSearchParams(location.search).get("explode")) || 0) / 100,
+        onManual: (on) => $("model-viewport").classList.toggle("manual", on),
         onExplode: (t) => {
           const pct = Math.round(t * 100);
-          document.getElementById("explode").value = pct;
-          document.getElementById("explode-v").textContent = pct + "%";
-          document.getElementById("explode-btn").textContent = t > 0.5 ? "Assemble" : "Explode";
+          $("explode").value = pct;
+          $("explode-v").textContent = pct + "%";
+          $("explode-btn").textContent = t > 0.5 ? "Assemble" : "Explode";
         },
       })
     : { setStatuses() {}, focus() {}, resetView() {}, toggleSpin() { return false; }, setMode() {}, setOil() {}, setLabels() {}, explode() {}, t: 0 };
-  const state = { data: null, sheet: [], pos: 0, playing: false, speed: 0, frame: -1, last: 0, model: null, signalBusy: false, signalPending: null };
+  let chart = null;  // per-metric graph, created once the data is loaded
+  const state = { data: null, sheet: [], filter: "all", pos: 0, playing: false, speed: 0, frame: -1, last: 0, model: null, signalBusy: false, signalPending: null };
 
-  const fmtTime = (iso) => { const d = new Date(iso); return d.toISOString().slice(0, 16).replace("T", " "); };
+  const fmtTime = (iso) => new Date(iso).toISOString().slice(0, 16).replace("T", " ");
   const fmtDay = (iso) => new Date(iso).toLocaleDateString(undefined, { day: "numeric", month: "short", timeZone: "UTC" });
-  const setStatusClass = (el, status) => { el.className = el.className.replace(/\bs-\S+/g, "").trim(); if (status) el.classList.add("s-" + status); };
+  const setStatusClass = (el, status) => { el.className = el.className.replace(/\bs-\S+/g, "").trim(); el.classList.add("s-" + (status || "NONE")); };
+  const worst = (list) => list.reduce((w, s) => (s && (w == null || RANK[s] > RANK[w]) ? s : w), null);
 
-  function buildBars(iots) {
-    $("health-grid").innerHTML = iots.map((iot, i) => `
-      <div class="health" id="iot-${iot.slot}" title="${iot.display_name}">
-        <div class="row"><span class="name">IOT${iot.slot}</span><span class="value">—</span></div>
-        <div class="sub">${SHORT_NAME[i] || iot.display_name}</div>
-        <div class="bar"><span></span></div>
-        <div class="state">No data</div>
-      </div>`).join("");
+  function buildCards(iots) {
+    const html = { precision: "", transformer: "" };
+    for (const iot of iots) {
+      const m = MONITORS[iot.slot];
+      html[m.group] += `
+        <div class="card s-NONE" id="card-${iot.slot}" data-slot="${iot.slot}" role="button" tabindex="0" title="Open ${m.name} graph">
+          <span class="open" aria-hidden="true">&#8599;</span>
+          <div class="name">${m.name}</div>
+          <div class="metric">${m.metric}</div>
+          <span class="flag"></span>
+          <div class="vrow"><div class="value">—</div><span class="pill s-NONE">No data</span></div>
+          <div class="brow"><div class="bar"><span></span></div><span class="health"></span></div>
+        </div>`;
+    }
+    $("cards-precision").innerHTML = html.precision;
+    $("cards-transformer").innerHTML = html.transformer;
+    document.querySelectorAll(".card[data-slot]").forEach((c) => {
+      const go = () => chart && chart.open(Number(c.dataset.slot));
+      c.onclick = go;
+      c.onkeydown = (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); go(); } };
+    });
   }
+
+  // Worst status per pixel column along the time bar (downsampled frames).
+  function drawStrip() {
+    const canvas = $("strip"), frames = state.data?.frames;
+    if (!frames) return;
+    const w = Math.max(1, Math.round(canvas.clientWidth * devicePixelRatio)), h = 8;
+    canvas.width = w; canvas.height = h;
+    const ctx = canvas.getContext("2d");
+    for (let x = 0; x < w; x++) {
+      const a = Math.floor((x / w) * frames.length), b = Math.max(a + 1, Math.floor(((x + 1) / w) * frames.length));
+      let s = null;
+      for (let i = a; i < b && i < frames.length; i++) s = worst([s, ...frames[i].s]);
+      ctx.fillStyle = s ? COLOR[s] : "#1c2632";
+      ctx.globalAlpha = 0.85;
+      ctx.fillRect(x, 0, 1, h);
+    }
+  }
+  new ResizeObserver(drawStrip).observe($("track"));
 
   async function load(transformerId) {
     const [timeline, sheet] = await Promise.all([
@@ -448,17 +665,21 @@
     state.data = timeline;
     state.sheet = sheet.rows;
     state.pos = 0; state.frame = -1; state.model = null;
-    buildBars(timeline.iots);
-    $("transformer").textContent = `Transformer ${timeline.transformer_id}`;
+    buildCards(timeline.iots);
     $("maint-download").href = `${API}/maintenance/${encodeURIComponent(transformerId)}?format=csv`;
     const n = timeline.frames.length;
-    $("status").textContent = `${n} hourly readings · ${fmtDay(timeline.start)} – ${fmtDay(timeline.end)} · ${sheet.checks} maintenance checks`;
+    $("sub").textContent = `630 kVA · 11 / 0.433 kV · Transformer ${timeline.transformer_id} · ${n} hourly readings`;
     const ticks = [0, .25, .5, .75, 1].map((f) => fmtDay(timeline.frames[Math.round(f * (n - 1))].t));
     $("ticks").innerHTML = ticks.map((t) => `<span>${t}</span>`).join("");
     ["back", "play", "fwd", "speed"].forEach((id) => ($(id).disabled = false));
     const start = /t=(\d+)/.exec(location.hash);  // e.g. #t=960 opens at hour 960
     state.pos = start ? Math.min(n - 1, Number(start[1])) : 0;
+    drawStrip();
+    fitLayout();   // cards are filled in now, so the 3D panel's height is final
+    if (!chart && window.MetricChart) chart = MetricChart.create({ MONITORS, LABEL, COLOR, GROUP, getState: () => state });
     render(true);
+    const openSlot = /(?:^|[?&])metric=(\d)/.exec(location.search);  // link option: ?metric=5 opens Oil Level
+    if (openSlot && chart && chart.slot == null) chart.open(Number(openSlot[1]));
   }
 
   function render(force) {
@@ -466,28 +687,55 @@
     const index = Math.min(frames.length - 1, Math.floor(state.pos));
     const ratio = frames.length > 1 ? state.pos / (frames.length - 1) : 0;
     $("knob").style.left = `${ratio * 100}%`;
-    $("fill").style.width = `${ratio * 100}%`;
     if (index === state.frame && !force) return;
     state.frame = index;
     const frame = frames[index];
     if (!frame) return;
-    $("time").textContent = `${fmtTime(frame.t)} UTC · day ${Math.floor(index / 24) + 1} of ${Math.ceil(frames.length / 24)}`;
+    const days = Math.ceil(frames.length / 24);
+    $("clock").textContent = `${fmtTime(frame.t)} UTC`;
+    $("clock-sub").textContent = `Day ${Math.floor(index / 24) + 1} of ${days}`;
+    $("time").textContent = `${fmtDay(frame.t)} · ${new Date(frame.t).toISOString().slice(11, 16)} UTC`;
 
+    const counts = { precision: 0, transformer: 0 };
     state.data.iots.forEach((iot, i) => {
-      const el = $(`iot-${iot.slot}`), status = frame.s[i], value = frame.v[i];
+      const el = $(`card-${iot.slot}`), status = frame.s[i], value = frame.v[i], m = MONITORS[iot.slot];
       setStatusClass(el, status);
-      el.querySelector(".bar > span").style.width = status ? `${FILL[status]}%` : "0";
-      el.querySelector(".state").textContent = status ? LABEL[status] : "No data";
-      el.querySelector(".value").textContent = value == null ? "—" : `${value.toFixed(1)}${UNIT[iot.unit] ?? ""}`;
+      // bar = the metric's health (100% as new, 0% at its critical limit), coloured by status
+      const health = window.MetricChart ? MetricChart.healthOf(iot.slot, value, iot) : (status ? FILL[status] : null);
+      el.querySelector(".bar > span").style.width = health == null ? "0" : `${Math.max(2, health)}%`;
+      el.querySelector(".health").textContent = health == null ? "" : `${Math.round(health)}%`;
+      el.querySelector(".health").title = "Health: 100% as new, 0% at the critical limit";
+      const pill = el.querySelector(".pill");
+      setStatusClass(pill, status);
+      pill.textContent = status ? LABEL[status] : "No data";
+      const [num, unit] = value == null ? ["—", ""] : m.fmt(value);
+      el.querySelector(".value").innerHTML = `${num}<small>${unit}</small>`;
+      if (status && status !== "NORMAL") counts[m.group]++;
     });
+    // trend flags raised up to the playback hour (accelerating oil leak, load growth)
+    for (const [key, info] of Object.entries(TREND_FLAGS)) {
+      const a = state.data.analytics && state.data.analytics[key];
+      if (!a) continue;
+      const card = $(`card-${a.slot}`), raised = a.flags.some((f) => Date.parse(f.detected_at) <= Date.parse(frame.t));
+      card.classList.toggle("flagged", raised);
+      const badge = card.querySelector(".flag");
+      badge.textContent = info.badge; badge.title = info.title;
+    }
+    $("count-precision").textContent = counts.precision ? `${counts.precision} of 2 need attention` : "All within limits";
+    $("count-transformer").textContent = counts.transformer ? `${counts.transformer} of 5 need attention` : "All within limits";
+
+    const overall = worst(frame.s);
+    setStatusClass($("overall"), overall);
+    $("overall").textContent = overall ? (overall === "NORMAL" ? "All monitors normal" : `Overall: ${LABEL[overall]} · ${counts.precision + counts.transformer} active`) : "No data";
 
     const bad = frame.q.filter(([, code]) => code !== "MISSING");
     const missing = frame.q.length - bad.length;
     $("issues").innerHTML = frame.q.length
-      ? `<b>Validation:</b> ${bad.map(([f, c]) => `${f} ${c.toLowerCase().replaceAll("_", " ")}`).join(", ")}${bad.length && missing ? ", " : ""}${missing ? `${missing} missing` : ""}`
+      ? `<b>Validation:</b> ${bad.map(([f, c]) => `${f.replaceAll("_", " ")} ${c.toLowerCase().replaceAll("_", " ")}`).join(", ")}${bad.length && missing ? ", " : ""}${missing ? `${missing} missing` : ""}`
       : "All inputs valid";
 
     twin.setStatuses(frame.s);
+    if (chart && chart.slot != null) chart.update();
     renderModel(frame);
     renderSheet(frame.t);
   }
@@ -496,10 +744,15 @@
     if (frame.m === state.model) return;
     state.model = frame.m;
     const slot = frame.m === "base" ? null : Number(frame.m.replace("iot", ""));
-    const status = slot ? frame.s[slot - 1] : null;
-    $("model-name").textContent = slot ? `IOT${slot} · ${state.data.models[frame.m]}` : state.data.models.base;
-    $("model-signal").textContent = slot ? `Signalled: ${LABEL[status]}` : "All IoTs normal";
-    setStatusClass($("model-viewport"), status);
+    const status = slot ? frame.s[slot - 1] : "NORMAL";
+    const m = slot && MONITORS[slot];
+    $("model-name").textContent = state.data.models[frame.m];
+    const tag = $("model-group");
+    tag.hidden = !m;
+    if (m) { tag.className = `tag g-${m.group}`; tag.textContent = GROUP[m.group].label; }
+    setStatusClass($("model-signal"), status);
+    $("model-signal").textContent = m ? LABEL[status] : "All monitors normal";
+    setStatusClass($("model-viewport"), slot ? status : null);
     twin.focus(slot);
     signal(frame.id);
   }
@@ -515,7 +768,7 @@
       }).then((r) => r.json());
       if (res.model_call) {
         const c = res.model_call;
-        $("model-call").textContent = `${c.action}(${c.model_id}) ← ${c.previous_model ?? "none"} · ${c.model.blend_file} · ${c.status}`;
+        $("model-call").textContent = `${c.action}(${c.model_id}) ← ${c.previous_model ?? "none"} · ${c.status}`;
       }
     } catch (e) {
       $("model-call").textContent = "Signal failed: " + e.message;
@@ -530,17 +783,34 @@
     // Sheet is sorted by check_no (= date order); find how many checks are opened by now.
     let lo = 0, hi = state.sheet.length;
     while (lo < hi) { const mid = (lo + hi) >> 1; if (new Date(state.sheet[mid].opened_at).getTime() <= until) lo = mid + 1; else hi = mid; }
-    $("maint-count").textContent = `· ${lo} of ${state.sheet.length}`;
-    const recent = state.sheet.slice(Math.max(0, lo - 40), lo).reverse();
+    $("maint-count").textContent = `· ${lo.toLocaleString()} of ${state.sheet.length.toLocaleString()}`;
+    const recent = [];
+    const shown = (c) => state.filter === "all" || MONITORS[c.iot].group === state.filter;
+    // pin the latest trend flag (e.g. accelerating oil leak) above the routine checks
+    let pinned = null;
+    for (let i = lo - 1; i >= 0; i--) if (state.sheet[i].flag) { pinned = state.sheet[i]; break; }
+    if (pinned && shown(pinned)) recent.push(pinned);
+    for (let i = lo - 1; i >= 0 && recent.length < 40; i--) {
+      const c = state.sheet[i];
+      if (c !== pinned && shown(c)) recent.push(c);
+    }
     $("maint-list").innerHTML = recent.length ? recent.map((c) => {
+      const m = MONITORS[c.iot];
       const resolved = c.resolved_at && new Date(c.resolved_at).getTime() <= until;
-      return `<div class="check s-${c.signal}">
-        <span class="no">#${c.check_no}</span><span class="what">IOT${c.iot} · ${LABEL[c.signal]}</span>
-        <span class="action">${c.recommended_action}</span>
-        <span class="when">${c.date} ${c.time_utc} UTC · ${resolved ? `resolved after ${c.duration_hours} h` : "open"}</span>
+      return `<div class="check${c.flag ? " pinned" : ""}">
+        <div class="top">${c.flag ? `<span class="no">Pinned trend flag ·</span>` : ""}<span class="no">#${c.check_no}</span><span class="what">${m.name}</span><span class="pill s-${c.signal}">${LABEL[c.signal]}</span></div>
+        <div><span class="tag g-${m.group}">${GROUP[m.group].label}</span>${c.flag ? ` <span class="tag flagtag">${FLAG_LABEL[c.flag] || c.flag}</span>` : ""}</div>
+        <div class="action">${c.recommended_action}</div>
+        <div class="when">${c.date} ${c.time_utc} UTC · ${resolved ? `resolved after ${c.duration_hours} h` : "open"}</div>
       </div>`;
     }).join("") : `<div class="empty">No checks yet.</div>`;
   }
+
+  document.querySelectorAll(".filters [data-filter]").forEach((b) => (b.onclick = () => {
+    document.querySelectorAll(".filters [data-filter]").forEach((x) => x.setAttribute("aria-pressed", x === b));
+    state.filter = b.dataset.filter;
+    if (state.data) renderSheet(state.data.frames[state.frame].t);
+  }));
 
   // ---------- playback: 1 day (24 hourly frames) per second at 1x ----------
   // Wall-clock based, so speed stays exact even if the browser throttles the timer.
@@ -558,12 +828,62 @@
     if (on && state.pos >= state.data.frames.length - 1) state.pos = 0;
     state.playing = on;
     $("play").innerHTML = on ? "&#10074;&#10074;" : "&#9654;";
+    $("play").setAttribute("aria-label", on ? "Pause" : "Play");
     clearInterval(state.timer);
     if (on) { state.last = performance.now(); state.timer = setInterval(tick, 1000 / 30); }
   }
   const seek = (pos) => { state.pos = Math.max(0, Math.min(state.data.frames.length - 1, pos)); render(); };
 
-  $("view-reset").onclick = () => twin.focus(state.model && state.model !== "base" ? Number(state.model.replace("iot", "")) : null);
+  const resetView = () => {
+    const slot = state.model && state.model !== "base" ? Number(state.model.replace("iot", "")) : null;
+    if (twin.release) twin.release();
+    if (slot) twin.focus(slot); else twin.resetView();
+  };
+
+
+  // ---------- free navigation: pad (hold to repeat) + keyboard ----------
+  const NAV = {
+    up: () => twin.pan(0, 1), down: () => twin.pan(0, -1), left: () => twin.pan(-1, 0), right: () => twin.pan(1, 0),
+    fwd: () => twin.move(1), back: () => twin.move(-1), zin: () => twin.zoom(0.9), zout: () => twin.zoom(1.1),
+  };
+  let navTimer = null;
+  const stopNav = () => { clearInterval(navTimer); navTimer = null; };
+  document.querySelectorAll(".nav [data-nav]").forEach((b) => {
+    const act = b.dataset.nav;
+    if (act === "home") { b.onclick = resetView; return; }
+    b.addEventListener("pointerdown", (e) => { e.preventDefault(); stopNav(); NAV[act](); navTimer = setInterval(NAV[act], 60); });
+    ["pointerup", "pointerleave", "pointercancel"].forEach((ev) => b.addEventListener(ev, stopNav));
+  });
+  const KEYS = { ArrowUp: "up", ArrowDown: "down", ArrowLeft: "left", ArrowRight: "right", a: "left", d: "right",
+    w: "fwd", s: "back", e: "up", q: "down", "+": "zin", "=": "zin", "-": "zout", _: "zout" };
+  let overModel = false;
+  $("model-viewport").addEventListener("pointerenter", () => (overModel = true));
+  $("model-viewport").addEventListener("pointerleave", () => (overModel = false));
+  document.addEventListener("keydown", (e) => {
+    if (!(overModel || $("model-viewport").contains(document.activeElement))) return;
+    if (e.target instanceof Element && e.target.matches("input, textarea")) return;
+    if (!$("metric-overlay").hidden) return;
+    const key = e.key.length === 1 ? e.key.toLowerCase() : e.key;
+    if (key === "r") { resetView(); e.preventDefault(); return; }
+    if (KEYS[key]) { NAV[KEYS[key]](); e.preventDefault(); }
+  });
+
+  // ---------- desktop: keep the 3D panel about 4:3 inside the window-fitted height ----------
+  const desktopFit = matchMedia("(min-width: 1001px) and (min-height: 640px)");
+  function fitLayout() {
+    const main = document.querySelector("main");
+    if (!desktopFit.matches) { main.style.gridTemplateColumns = ""; return; }
+    const body = $("model-viewport");
+    const width = Math.round(body.clientHeight * 1.42) + 18;          // slightly wider than tall, plus margins
+    const max = main.clientWidth - 36 - 360 - 10;                      // keep >= 360px for the side column
+    main.style.gridTemplateColumns = `${Math.max(420, Math.min(width, max))}px minmax(0, 1fr)`;
+  }
+  const fitObserver = new ResizeObserver(fitLayout);
+  fitObserver.observe(document.querySelector("main"));
+  fitObserver.observe($("model-viewport"));   // height changes when the cards / timeline fill in
+  desktopFit.addEventListener("change", fitLayout);
+  addEventListener("resize", fitLayout);
+  fitLayout();
   const linkView = new URLSearchParams(location.search).get("view");
   if (linkView) document.querySelectorAll(".seg [data-mode]").forEach((x) => x.setAttribute("aria-pressed", x.dataset.mode === linkView));
   document.querySelectorAll(".seg [data-mode]").forEach((b) => (b.onclick = () => {
@@ -611,9 +931,9 @@
   $("file").addEventListener("change", (e) => upload(e.target.files[0]));
 
   fetch(`${API}/transformers`).then((r) => r.json()).then((list) => {
-    if (!list.length) { $("status").textContent = "No data: run scripts/simulate.py or drop a CSV"; return; }
+    if (!list.length) { $("sub").textContent = "No data: run scripts/simulate.py or drop a CSV"; return; }
     return load(list[0].transformer_id);
-  }).catch((e) => { $("status").textContent = "API unavailable: " + e.message; });
+  }).catch((e) => { $("sub").textContent = "API unavailable: " + e.message; });
 })();
 </script>
 </body>

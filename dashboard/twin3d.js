@@ -21,7 +21,7 @@
  */
 (function (root) {
   'use strict';
-  const COL = { NORMAL: '#3fb950', WARNING: '#d29922', PREDICTED_MAINTENANCE: '#a371f7', MAINTENANCE_REQUIRED: '#f0883e', CRITICAL: '#f85149', NONE: '#5c6773' };
+  const COL = { NORMAL: '#34d399', WARNING: '#fbbf24', PREDICTED_MAINTENANCE: '#a78bfa', MAINTENANCE_REQUIRED: '#fb923c', CRITICAL: '#f87171', NONE: '#4b5867' };
   const RANK = { NONE: -1, NORMAL: 0, WARNING: 1, PREDICTED_MAINTENANCE: 2, MAINTENANCE_REQUIRED: 3, CRITICAL: 4 };
   const B = (x, y, z) => new THREE.Vector3(x, z, -y);   // Blender (Z up) -> three (Y up)
 
@@ -48,7 +48,10 @@
     const say = opts.onStatus || (() => {});
     const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
     const sensors = SENSORS.map(s => Object.assign({}, s, { s: 'NONE' }));
-    const api = { ready: false, setStatuses, focus, resetView, toggleSpin, setMode, setOil, setLabels, explode, get t() { return t; } };
+    const api = { ready: false, setStatuses, focus, resetView, toggleSpin, setMode, setOil, setLabels, explode, pan, move, zoom, release, get t() { return t; }, get manual() { return manual; } };
+    const onManual = opts.onManual || (() => {});
+    // manual = the user is navigating; automatic IoT focus pauses until Reset view
+    let manual = false;
     const onExplode = opts.onExplode || (() => {});
     let statuses = [], focusSlot = null;
     // explode / tank-view state
@@ -58,7 +61,7 @@
 
     if (!root.THREE || !THREE.GLTFLoader) { say('3D viewer could not load'); return api; }
 
-    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
     renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
     renderer.outputEncoding = THREE.sRGBEncoding;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
@@ -68,11 +71,14 @@
     container.prepend(renderer.domElement);
 
     const scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x0f1419);
+    scene.background = null;   // panel gradient shows through
     const camera = new THREE.PerspectiveCamera(35, 16 / 10, 0.05, 100);
     const controls = new THREE.OrbitControls(camera, renderer.domElement);
     controls.enableDamping = true;
     controls.autoRotateSpeed = 0.8;
+    controls.screenSpacePanning = true;   // up/down drags move the view vertically
+    controls.panSpeed = 1.1;
+    controls.zoomSpeed = 1.1;
     if (THREE.RoomEnvironment) {
       const pmrem = new THREE.PMREMGenerator(renderer);
       scene.environment = pmrem.fromScene(new THREE.RoomEnvironment(), 0.04).texture;
@@ -133,7 +139,7 @@
     function lerpHome(k) { const h = homeAt(k); controls.target.copy(h.target); camera.position.copy(h.pos); }
     function explode(goal, animate) {
       if (!api.ready) return;
-      follow = true; fly = null;   // exploding shows the whole model, as on the FRONTEND page
+      if (!manual) { follow = true; fly = null; }   // exploding shows the whole model (unless the user is navigating)
       if (!animate || reduce) { tAnim = null; setT(goal); return; }
       const from = t, t0 = performance.now(), ms = 2800 * Math.max(Math.abs(goal - from), 0.15);
       tAnim = now => {
@@ -187,7 +193,7 @@
         if (!s.dev) {
           const box = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.045, 0.035), housing);
           const band = new THREE.Mesh(new THREE.BoxGeometry(0.062, 0.012, 0.037),
-            new THREE.MeshStandardMaterial({ color: 0x222222, emissive: 0x3fb950, emissiveIntensity: 2 }));
+            new THREE.MeshStandardMaterial({ color: 0x222222, emissive: 0x34d399, emissiveIntensity: 2 }));
           band.position.y = -0.012;
           s.mats = [band.material];
           g.add(box, band);
@@ -238,7 +244,39 @@
         if (k >= 1) fly = null;
       };
     }
-    function resetView() { if (!homes.a) return; follow = true; const h = homeAt(t); flyBetween(h.target, h.pos); }
+    function resetView() { if (!homes.a) return; if (manual) { manual = false; onManual(false); } follow = true; const h = homeAt(t); flyBetween(h.target, h.pos); }
+
+    // ---- free navigation: pan (left/right/up/down), move (forward/back through the model), zoom
+    function takeControl() {
+      fly = null; follow = false;
+      if (!manual) { manual = true; onManual(true); }
+    }
+    const tmp = new THREE.Vector3(), right = new THREE.Vector3(), up = new THREE.Vector3();
+    function step() { return Math.max(0.03, camera.position.distanceTo(controls.target) * 0.06); }
+    function pan(dx, dy) {               // screen-space: +x right, +y up
+      takeControl();
+      camera.updateMatrixWorld();
+      right.setFromMatrixColumn(camera.matrixWorld, 0);
+      up.setFromMatrixColumn(camera.matrixWorld, 1);
+      tmp.copy(right).multiplyScalar(dx * step()).addScaledVector(up, dy * step());
+      camera.position.add(tmp); controls.target.add(tmp);
+    }
+    function move(d) {                   // forward (+) / back (-): camera and target travel together
+      takeControl();
+      tmp.subVectors(controls.target, camera.position).normalize().multiplyScalar(d * Math.max(0.05, step()));
+      camera.position.add(tmp); controls.target.add(tmp);
+    }
+    function release() {                 // hand the camera back to the automatic IoT focus
+      if (manual) { manual = false; onManual(false); }
+      lastMove = -Infinity;
+    }
+    function zoom(f) {                   // f < 1 closer, > 1 further, orbit point fixed
+      takeControl();
+      const dist = camera.position.distanceTo(controls.target);
+      const next = Math.min(controls.maxDistance, Math.max(controls.minDistance, dist * f));
+      tmp.subVectors(camera.position, controls.target).setLength(next);
+      camera.position.copy(controls.target).add(tmp);
+    }
     function toggleSpin() { controls.autoRotate = !controls.autoRotate; return controls.autoRotate; }
 
     // Base model = whole transformer; IoT model = camera centred on that IoT's sensors.
@@ -258,6 +296,7 @@
       moveCamera();
     }
     function moveCamera() {
+      if (manual) return;   // the user is navigating; Reset view hands control back
       // exploded = inspection mode: keep the whole model in view; highlighting still applies
       if (!focusSlot || t > 0.05) return resetView();
       follow = false;
@@ -316,6 +355,10 @@
     }, undefined, () => say('The 3D model could not load'));
 
     controls.addEventListener('start', () => { fly = null; follow = false; });
+    // dragging to pan (right button, or shift/ctrl + left) or wheel zoom counts as manual navigation
+    renderer.domElement.addEventListener('pointerdown', (e) => { if (e.button === 2 || e.shiftKey || e.ctrlKey || e.metaKey) takeControl(); });
+    renderer.domElement.addEventListener('wheel', () => takeControl(), { passive: true });
+    renderer.domElement.addEventListener('contextmenu', (e) => e.preventDefault());
 
     function size() {
       const w = container.clientWidth, h = container.clientHeight;

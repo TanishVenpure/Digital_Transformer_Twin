@@ -19,7 +19,7 @@ from app.formulas.registry import formula_registry
 
 TRIGGER_STATUSES = {"WARNING", "PREDICTED_MAINTENANCE", "MAINTENANCE_REQUIRED", "CRITICAL"}
 SHEET_FIELDS = (
-    "check_no", "transformer_id", "date", "time_utc", "opened_at", "iot", "iot_name", "signal",
+    "check_no", "transformer_id", "date", "time_utc", "opened_at", "iot", "iot_name", "signal", "flag",
     "previous_status", "measured_value", "threshold", "comparison", "unit", "maintenance_type",
     "recommended_action", "status", "resolved_at", "duration_hours", "reading_id", "text",
 )
@@ -36,6 +36,10 @@ def _fmt(value: float | None) -> str:
 
 def describe(record: dict[str, Any]) -> str:
     when = record["opened_at"].strftime("%Y-%m-%d %H:%M UTC")
+    if record.get("flag"):
+        return (f"Maintenance check #{record['check_no']} for transformer {record['transformer_id']} on {when}: "
+                f"IOT{record['iot']} {record['iot_name']} trend flag {record['flag']} raised {record.get('trigger', '')}. "
+                f"{record['detail']} Recommended action: {record['recommended_action']}")
     sentence = (
         f"Maintenance check #{record['check_no']} for transformer {record['transformer_id']} on {when}: "
         f"IOT{record['iot']} {record['iot_name']} signalled {record['signal']}"
@@ -98,6 +102,34 @@ def build_checks(
             checks.append(check)
     for number, check in enumerate(checks, start=1):
         check["check_no"] = number
+        check["status"] = "OPEN" if check["resolved_at"] is None else "RESOLVED"
+        check["date"] = check["opened_at"].strftime("%Y-%m-%d")
+        check["time_utc"] = check["opened_at"].strftime("%H:%M")
+        check["text"] = describe(check)
+    return checks
+
+
+def add_trend_flags(
+    checks: list[dict[str, Any]], flags: list[dict[str, Any]], *, transformer_id: str, slot: int,
+    names: dict[int, tuple[str, str, str]], action: str, reading_at: dict[datetime, int],
+) -> list[dict[str, Any]]:
+    """Merge cycle-trend flags (e.g. accelerating oil leak) into the sheet, in date order, renumbered."""
+    formula_name, display_name, _ = names[slot]
+    for f in flags:
+        opened = datetime.fromisoformat(f["detected_at"])
+        checks.append({
+            "transformer_id": transformer_id, "opened_at": opened, "iot": slot, "iot_name": display_name,
+            "formula_name": formula_name, "signal": "MAINTENANCE_REQUIRED", "flag": f["flag"],
+            "previous_status": "TREND", "measured_value": f.get("value"), "threshold": None,
+            "comparison": None, "unit": f.get("unit", ""), "maintenance_type": "TRANSFORMER_MAINTENANCE",
+            "trigger": f.get("trigger", ""),
+            "recommended_action": action, "resolved_at": None, "duration_hours": None,
+            "reading_id": reading_at.get(opened), "detail": f["message"],
+        })
+    checks.sort(key=lambda c: (c["opened_at"], 1 if c.get("flag") else 0))
+    for number, check in enumerate(checks, start=1):
+        check["check_no"] = number
+        check.setdefault("flag", "")
         check["status"] = "OPEN" if check["resolved_at"] is None else "RESOLVED"
         check["date"] = check["opened_at"].strftime("%Y-%m-%d")
         check["time_utc"] = check["opened_at"].strftime("%H:%M")

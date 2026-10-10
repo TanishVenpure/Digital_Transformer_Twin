@@ -45,11 +45,14 @@ formulas:
     unit: percent_deviation
     warning: 5.0               # +/-5 % prototype
     critical: 10.0             # +/-10 % prototype
-    lead_time_hours: 24.0      # EXAMPLE
+    lead_time_hours: null      # no prediction: an external supply has no wear trend to extrapolate
     maintenance_type: TRANSFORMER_MAINTENANCE
     warning_message: "Phase voltage deviates more than the warning band from nominal."
     critical_message: "Phase voltage deviates more than the critical band from nominal."
     predicted_message: "Voltage deviation is predicted to breach the critical band within the lead time."
+    # Supply voltage is set by the upstream grid: a deviation is a supply-quality event to report
+    # to the utility, not transformer maintenance, so it is kept out of the maintenance sheet.
+    maintenance_sheet: false
     parameters:
       nominal_voltage: 250.0   # V, EXAMPLE: phase-to-neutral of 433 V LV; match what the sensors measure
 
