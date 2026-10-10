@@ -112,7 +112,7 @@ the spec and must be replaced with the transformer's own data.
 | Monitor | Formula | Signal |
 |---|---|---|
 | Loading (overload) | I_rated = S / (√3 · V_LL), which is 33.07 A primary and 840 A secondary. Loading = I / I_rated × 100 | **> 100 % warning**, **> 120 % trip** (the breaker opens after 2 s) |
-| Voltage | Deviation = (V − V_nominal) / V_nominal × 100 | **MV / LV class:** primary winding, ±6 %. **HV class:** secondary winding, +6 % / −9 %. Set by `voltage_class` |
+| Voltage | Deviation = (V − V_nominal) / V_nominal × 100 | Both windings are judged: **primary** ±6 %, **secondary** +6 % (high side) / −9 % (low side). Set in `electrical.voltage_limits` |
 | Top oil (OTI) | Absolute T_O | **95 °C alarm**, **105 °C trip** |
 | Winding (WTI) | WTI = T_O + thermal image (its own gradient and time constant) | **110 °C alarm**, **120 °C trip** |
 | Thermal trip | TRIP = OTI trip **OR** WTI trip | OTI and WTI are never averaged |
@@ -139,14 +139,16 @@ the spec and must be replaced with the transformer's own data.
 
 | Time | What happens | Signals |
 |---|---|---|
-| 03:20 | Light-load over-voltage: primary +7.3 % for 88 s | OVERVOLTAGE |
+| 03:20 | Light-load over-voltage: primary +7.9 %, secondary +6.6 % for 88 s | OVERVOLTAGE on both windings |
 | 05:12 | Winding probe drop-out for 20 s | Data error; the residual shows no data and nothing trips |
-| 07:45:10 | 2 s voltage dip, primary −8.8 % | UNDERVOLTAGE |
+| 07:45:10 | 2 s voltage dip: primary −8.8 %, secondary −10.3 % | UNDERVOLTAGE on both windings |
 | 10:08 to 10:21 | A neighbouring feeder is transferred on (112 %), then a 128 % surge | OVERLOAD warning, then overload trip. The breaker opens; out until 10:40 |
-| 11:00 to 13:43 | Radiator fans fail with a valve part-closed, and a winding cooling duct blocks | COOLING_DEGRADATION, top-oil rise > 40 K, WINDING_EXCESS_HEATING, ACCELERATED_THERMAL_AGEING, OTI alarm, WTI alarm, PRESSURE warning, then the **OTI trip** at 105 °C |
-| 13:43 | Tank pressure peaks at 201.8 kPa: a **near failure caught** 28 kPa below the limit | PRESSURE_WARNING |
-| 17:30 to 19:02 | Evening peak at about 117 % with one radiator bank still out | OVERLOAD warning (below the trip), WTI alarm, then the **WTI trip** at 120 °C |
+| 11:00 to 15:08 | Two ONAN radiator banks are valved off / blocked (top-oil rise ×3.4), and a winding cooling duct blocks (gradient up to +40 %, so the excess grows with load) | COOLING_DEGRADATION, top-oil rise > 40 K, WINDING_EXCESS_HEATING, ACCELERATED_THERMAL_AGEING, OTI alarm, WTI alarm, PRESSURE warning, then the **OTI trip** at 105 °C; out of service 90 min, one bank reopened |
+| ~15:08 | Tank pressure peaks at about 202 kPa: a **near failure caught** about 28 kPa below the limit | PRESSURE_WARNING |
+| 17:30 to 19:10 | Evening peak at about 117 % with one radiator bank still out | OVERLOAD warning (below the trip), WTI alarm, then the **WTI trip** at 120 °C; out of service 90 min, all cooling and the duct repaired |
 | 20:42 | The current device's Y phase drifts past 1 % | PRECISION_CURRENT (maintained on timebar 2) |
+
+While the transformer is out of service the current and voltage devices show no data (there is nothing to compare with the reference), the expected top-oil line is blank (the IEC model restarts from the measured top oil when it is re-energised), and the winding excess falls to zero (no load, no winding heat).
 
 ### Timebar 2: one year of daily readings (`twin_iot/app/twin2/timebar2.py`)
 

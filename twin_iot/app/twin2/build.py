@@ -61,7 +61,7 @@ def thermal_flags(sec: dict[str, list], cfg: dict[str, Any]) -> dict[str, list]:
     cooling = [False] * n
     w = th["cooling_window_min"] * 60
     for a in range(0, n, w):
-        idx = [i for i in range(a, min(a + w, n)) if on[i] and sec["top_oil_rise_expected"][i] >= 8]
+        idx = [i for i in range(a, min(a + w, n)) if on[i] and (sec["top_oil_rise_expected"][i] or 0) >= 8]
         if len(idx) >= w * 0.8:
             ratio = sum(sec["top_oil_rise_measured"][i] for i in idx) / sum(sec["top_oil_rise_expected"][i] for i in idx)
             if ratio > th["cooling_ratio_limit"]:
@@ -95,7 +95,6 @@ def thermal_flags(sec: dict[str, list], cfg: dict[str, Any]) -> dict[str, list]:
 def timebar1_events(d: dict[str, Any], flags: dict[str, list], cfg: dict[str, Any]) -> list[dict[str, Any]]:
     sec, day0 = d["sec"], d["day0"]
     th, pr = cfg["thermal"], cfg["pressure"]
-    rule = f.voltage_rule(cfg)
     ev: list[dict[str, Any]] = []
 
     def add(kind, level, a, b, monitor, message, **extra):
@@ -110,16 +109,17 @@ def timebar1_events(d: dict[str, Any], flags: dict[str, list], cfg: dict[str, An
         peak = max(sec["loading_max"][a:b])
         add("OVERLOAD_TRIP", "CRITICAL", a, b, "loading",
             f"Loading {peak:.1f} % is above the {cfg['electrical']['overload_trip_pct']:.0f} % trip setting.")
-    for kind in ("OVERVOLTAGE", "UNDERVOLTAGE"):
-        for a, b in _runs(sec["voltage"], lambda v, k=kind: v == k):
-            key = "v_pri_max" if kind == "OVERVOLTAGE" else "v_pri_min"
-            if rule["winding"] == "secondary":
-                key = key.replace("pri", "sec")
-            vals = [x for x in sec[key][a:b] if x is not None]
-            peak = max(vals) if kind == "OVERVOLTAGE" else min(vals)
-            limit = rule["high_pct"] if kind == "OVERVOLTAGE" else -rule["low_pct"]
-            add(kind, "WARNING", a, b, "voltage",
-                f"{rule['winding'].capitalize()} winding voltage {peak:+.2f} % from nominal (limit {limit:+.0f} %) for {b - a} s.")
+    for rule in f.voltage_rules(cfg):            # both windings, each against its own band
+        w = "pri" if rule["winding"] == "primary" else "sec"
+        for kind in ("OVERVOLTAGE", "UNDERVOLTAGE"):
+            for a, b in _runs(sec[f"voltage_{w}"], lambda v, k=kind: v == k):
+                key = f"v_{w}_max" if kind == "OVERVOLTAGE" else f"v_{w}_min"
+                vals = [x for x in sec[key][a:b] if x is not None]
+                peak = max(vals) if kind == "OVERVOLTAGE" else min(vals)
+                limit = rule["high_pct"] if kind == "OVERVOLTAGE" else -rule["low_pct"]
+                add(kind, "WARNING", a, b, "voltage",
+                    f"{rule['winding'].capitalize()} winding voltage {peak:+.2f} % from nominal (limit {limit:+.0f} %) "
+                    f"for {b - a} s.", winding=rule["winding"])
     for monitor, key, alarm, trip in (("oti", "oti_condition", th["oti_alarm_c"], th["oti_trip_c"]),
                                       ("wti", "wti_condition", th["wti_alarm_c"], th["wti_trip_c"])):
         temp = "top_oil" if monitor == "oti" else "wti"
@@ -135,7 +135,7 @@ def timebar1_events(d: dict[str, Any], flags: dict[str, list], cfg: dict[str, An
                                          f"Top-oil rise over ambient above {th['top_oil_rise_limit_k']:.0f} K (analytics only, not a trip)."),
              "cooling_degradation": ("COOLING_DEGRADATION", "MAINTENANCE_REQUIRED", "thermal",
                                      f"Measured top-oil rise more than {th['cooling_ratio_limit']:.2f} x the IEC model over "
-                                     f"{th['cooling_window_min']} min: radiators / fans not cooling as designed."),
+                                     f"{th['cooling_window_min']} min: radiators not cooling as designed (ONAN: check radiator valves, blocked fins)."),
              "winding_excess_heating": ("WINDING_EXCESS_HEATING", "MAINTENANCE_REQUIRED", "thermal",
                                         f"Winding {th['residual_min_k']:.1f} K or more above the IEC model and growing for "
                                         f"{th['residual_windows']} windows of {th['residual_window_min']} min (scaled from the weekly "
@@ -159,7 +159,7 @@ def timebar1_events(d: dict[str, Any], flags: dict[str, list], cfg: dict[str, An
     pc = d["precision"]
     for dev in timebar2.DEVICES:
         for a, b in _runs([r[f"{dev}_status"] for r in pc], lambda v: v == "MAINTENANCE_REQUIRED", gap=30):
-            worst = max(max(r[dev]) for r in pc[a:b])
+            worst = max(v for r in pc[a:b] for v in r[dev] if v is not None)
             add(f"PRECISION_{dev.upper()}", "MAINTENANCE_REQUIRED", a * 60, b * 60, f"prec_{dev}",
                 f"{dev.capitalize()} device deviates up to {worst:.2f} % from the reference (limit "
                 f"{cfg['precision']['max_deviation_pct']:.0f} %): maintenance on the 1-year timebar.")
@@ -203,7 +203,7 @@ def build(cfg: dict[str, Any] | None = None, out_dir: Path | None = None) -> dic
         "v_pri_min": agg("v_pri_min", min), "v_pri_max": agg("v_pri_max", max),
         "v_sec_min": agg("v_sec_min", min), "v_sec_max": agg("v_sec_max", max),
         "ambient": [round(x, 2) for x in d1["ambient_min"]],
-        "load_factor": agg("load_factor", mean), "top_oil": agg("top_oil", max),
+        "load_factor": agg("load_factor", max), "top_oil": agg("top_oil", max),
         "top_oil_expected": agg("top_oil_expected", mean), "top_oil_rise_measured": agg("top_oil_rise_measured", mean),
         "top_oil_rise_expected": agg("top_oil_rise_expected", mean),
         "hotspot": agg("hotspot_temperature_estimated", max), "wti": agg("wti", max),
@@ -223,6 +223,8 @@ def build(cfg: dict[str, Any] | None = None, out_dir: Path | None = None) -> dic
     status = {
         "loading": [_minute_status(sec["overload"], m, ovmap) for m in range(n_min)],
         "voltage": [_minute_status(sec["voltage"], m, {"OVERVOLTAGE": "WARNING", "UNDERVOLTAGE": "WARNING"}) for m in range(n_min)],
+        "voltage_primary": [_minute_status(sec["voltage_pri"], m, {"OVERVOLTAGE": "WARNING", "UNDERVOLTAGE": "WARNING"}) for m in range(n_min)],
+        "voltage_secondary": [_minute_status(sec["voltage_sec"], m, {"OVERVOLTAGE": "WARNING", "UNDERVOLTAGE": "WARNING"}) for m in range(n_min)],
         "oti": [_minute_status(sec["oti_condition"], m, {"ALARM": "WARNING", "TRIP": "CRITICAL"}) for m in range(n_min)],
         "wti": [_minute_status(sec["wti_condition"], m, {"ALARM": "WARNING", "TRIP": "CRITICAL"}) for m in range(n_min)],
         "pressure": [r["status"] for r in d1["pressure"]],
@@ -242,11 +244,13 @@ def build(cfg: dict[str, Any] | None = None, out_dir: Path | None = None) -> dic
         status[f"prec_{dev}"] = [r[f"{dev}_status"] for r in d1["precision"]]
 
     th, pr, tr = cfg["thermal"], cfg["pressure"], cfg["transformer"]
-    rule = f.voltage_rule(cfg)
+    vp, vs = f.voltage_rule(cfg, "primary"), f.voltage_rule(cfg, "secondary")
     limits = {
         "overload_warning_pct": cfg["electrical"]["overload_warning_pct"], "overload_trip_pct": cfg["electrical"]["overload_trip_pct"],
-        "voltage_class": tr["voltage_class"], "voltage_winding": rule["winding"], "voltage_high_pct": rule["high_pct"],
-        "voltage_low_pct": rule["low_pct"], "oti_alarm_c": th["oti_alarm_c"], "oti_trip_c": th["oti_trip_c"],
+        "voltage_class": tr["voltage_class"],
+        "voltage_primary_high_pct": vp["high_pct"], "voltage_primary_low_pct": vp["low_pct"],
+        "voltage_secondary_high_pct": vs["high_pct"], "voltage_secondary_low_pct": vs["low_pct"],
+        "oti_alarm_c": th["oti_alarm_c"], "oti_trip_c": th["oti_trip_c"],
         "wti_alarm_c": th["wti_alarm_c"], "wti_trip_c": th["wti_trip_c"], "top_oil_rise_limit_k": th["top_oil_rise_limit_k"],
         "residual_min_k": th["residual_min_k"], "pressure_warning_kpa": pr["warning_kpa_abs"], "pressure_limit_kpa": pr["limit_kpa_abs"],
         "precision_max_pct": cfg["precision"]["max_deviation_pct"],
@@ -296,13 +300,15 @@ def _write_csvs(out_dir: Path, d1, flags, d2, events) -> None:
 
     write("timebar1_electrical_1s.csv",
           ["timestamp", "energized", "loading_pct_max", "loading_pct_mean", "loading_primary_pct", "v_primary_dev_min_pct",
-           "v_primary_dev_max_pct", "v_secondary_dev_min_pct", "v_secondary_dev_max_pct", "overload", "voltage_condition"],
+           "v_primary_dev_max_pct", "v_secondary_dev_min_pct", "v_secondary_dev_max_pct", "overload",
+           "voltage_condition_primary", "voltage_condition_secondary"],
           ([_clock(day0, i), sec["energized"][i], sec["loading_max"][i], sec["loading_mean"][i], sec["loading_pri"][i],
             sec["v_pri_min"][i], sec["v_pri_max"][i], sec["v_sec_min"][i], sec["v_sec_max"][i], sec["overload"][i],
-            sec["voltage"][i]] for i in range(n)))
-    write("timebar1_electrical_20ms.csv", ["window", "timestamp", "loading_pct", "voltage_deviation_pct", "winding"],
-          ([w["id"], _clock(day0, w["t0"] + j * w["dt"]), w["loading_pct"][j], w["voltage_deviation_pct"][j], w["winding"]]
-           for w in d1["windows"] for j in range(len(w["loading_pct"]))))
+            sec["voltage_pri"][i], sec["voltage_sec"][i]] for i in range(n)))
+    write("timebar1_electrical_20ms.csv",
+          ["window", "timestamp", "loading_pct", "v_primary_dev_pct", "v_secondary_dev_pct"],
+          ([w["id"], _clock(day0, w["t0"] + j * w["dt"]), w["loading_pct"][j], w["voltage_deviation_pct"][j],
+            w["voltage_secondary_pct"][j]] for w in d1["windows"] for j in range(len(w["loading_pct"]))))
     cols = ["load_factor", "ambient", "top_oil", "top_oil_rise_measured", "top_oil_rise_expected",
             "hotspot_temperature_estimated", "wti", "winding_measured", "winding_expected", "winding_thermal_residual",
             "relative_ageing_rate", "equivalent_ageing_hours", "ageing_ratio"]

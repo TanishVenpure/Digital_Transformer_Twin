@@ -4,7 +4,7 @@ Electrical (timebar 1, per 20 ms cycle):
   I_rated   = S_rated / (sqrt(3) * V_LL)
   loading % = I / I_rated x 100                 > 100 % warning, > 120 % trip
   deviation % = (V - V_nominal) / V_nominal x 100
-     MV / LV class: primary winding, +-6 %;  HV class: secondary winding, +6 % / -9 %
+     primary winding: +-6 %;  secondary winding: +6 % (high side) / -9 % (low side); both are judged
 Precision devices (both timebars): per phase |measured - reference| / reference x 100 > 1 % -> maintenance.
 Thermal (timebar 1, every second; IEC 60076-7 exponential model):
   K = I / I_rated
@@ -63,12 +63,20 @@ def voltage_deviation_pct(voltage: float, nominal: float) -> float:
     return (voltage - nominal) / nominal * 100
 
 
-def voltage_rule(cfg: dict[str, Any], voltage_class: str | None = None) -> dict[str, Any]:
-    return cfg["electrical"]["voltage_limits"][voltage_class or cfg["transformer"]["voltage_class"]]
+WINDINGS = ("primary", "secondary")
+
+
+def voltage_rule(cfg: dict[str, Any], winding: str = "primary") -> dict[str, Any]:
+    """The over / under-voltage band of one winding: {'winding', 'high_pct', 'low_pct'}."""
+    return {"winding": winding, **cfg["electrical"]["voltage_limits"][winding]}
+
+
+def voltage_rules(cfg: dict[str, Any]) -> list[dict[str, Any]]:
+    return [voltage_rule(cfg, w) for w in WINDINGS]
 
 
 def voltage_condition(deviation: float, rule: dict[str, Any]) -> str:
-    """OVERVOLTAGE / UNDERVOLTAGE / NORMAL for the winding the class watches."""
+    """OVERVOLTAGE / UNDERVOLTAGE / NORMAL for one winding's deviation against its band."""
     if deviation > rule["high_pct"]:
         return "OVERVOLTAGE"
     if deviation < -rule["low_pct"]:

@@ -23,17 +23,17 @@ def test_overload_warning_above_100_trip_above_120(loading, status):
     assert f.loading_pct(840 * loading / 100, 840) == pytest.approx(loading)
 
 
-@pytest.mark.parametrize("vclass,dev,cond", [
-    ("MV_LV", 6.1, "OVERVOLTAGE"), ("MV_LV", -6.1, "UNDERVOLTAGE"), ("MV_LV", -5.9, "NORMAL"),
-    ("HV", 6.1, "OVERVOLTAGE"), ("HV", -8.9, "NORMAL"), ("HV", -9.1, "UNDERVOLTAGE"),
+@pytest.mark.parametrize("winding,dev,cond", [
+    ("primary", 6.1, "OVERVOLTAGE"), ("primary", -6.1, "UNDERVOLTAGE"), ("primary", -5.9, "NORMAL"),
+    ("secondary", 6.1, "OVERVOLTAGE"), ("secondary", -8.9, "NORMAL"), ("secondary", -9.1, "UNDERVOLTAGE"),
 ])
-def test_voltage_limits_per_class(vclass, dev, cond):
-    assert f.voltage_condition(dev, f.voltage_rule(CFG, vclass)) == cond
+def test_voltage_limits_per_winding(winding, dev, cond):
+    """Primary +-6 %; secondary +6 % on the high side, -9 % on the low side."""
+    assert f.voltage_condition(dev, f.voltage_rule(CFG, winding)) == cond
 
 
-def test_voltage_class_watches_the_right_winding():
-    assert f.voltage_rule(CFG, "MV_LV")["winding"] == "primary"
-    assert f.voltage_rule(CFG, "HV")["winding"] == "secondary"
+def test_both_windings_are_judged():
+    assert [r["winding"] for r in f.voltage_rules(CFG)] == ["primary", "secondary"]
     assert f.voltage_deviation_pct(11660, 11000) == pytest.approx(6.0)
 
 
@@ -138,3 +138,31 @@ def test_timebar2_every_precision_device_fails_and_oil_reaches_minimum(payloads)
     for dev in ("CURRENT", "VOLTAGE", "TEMPERATURE"):
         assert types.count(f"PRECISION_{dev}") >= 1 and f"PRECISION_{dev}_RECALIBRATED" in types
     assert "OIL_LEAK" in types and "MINIMUM_OIL_LEVEL" in types and "OIL_LEAK_REPAIRED" in types
+
+
+def test_voltage_events_name_each_winding(payloads):
+    ev = [e for e in payloads["timebar1"]["events"] if e["type"] in ("OVERVOLTAGE", "UNDERVOLTAGE")]
+    assert {(e["type"], e["winding"]) for e in ev} >= {("OVERVOLTAGE", "primary"), ("UNDERVOLTAGE", "primary"),
+                                                       ("UNDERVOLTAGE", "secondary")}
+    limits = payloads["timebar1"]["limits"]
+    assert (limits["voltage_secondary_high_pct"], limits["voltage_secondary_low_pct"]) == (6.0, 9.0)
+
+
+def test_out_of_service_is_consistent(payloads):
+    """With the breaker open: no CT / PT comparison, no expected top oil, no winding excess."""
+    tb = payloads["timebar1"]
+    s = tb["series"]
+    off = [m for m, on in enumerate(s["energized"]) if not on]
+    assert off
+    for m in (m for m in off if m - 1 in off and m + 1 in off):     # whole minutes out of service
+        assert s["prec_current"][m] == [None, None, None] and s["prec_voltage"][m] == [None, None, None]
+        assert s["prec_temperature"][m][0] is not None
+        assert s["top_oil_expected"][m] is None
+    # the blocked duct shows only under load: the residual decays to ~0 a few winding time constants into an outage
+    late = [m for m in off if m - 40 in off and m + 1 in off]
+    assert late and all(abs(s["residual"][m]) < 0.2 for m in late if s["residual"][m] is not None)
+
+
+def test_load_factor_keeps_the_overload_surge(payloads):
+    s = payloads["timebar1"]["series"]
+    assert max(x for x in s["load_factor"] if x) == pytest.approx(max(x for x in s["loading_max"] if x) / 100, rel=0.02)

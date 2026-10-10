@@ -24,13 +24,25 @@
   const $ = (id) => document.getElementById(id);
   const worst = (list) => list.reduce((w, s) => (s && RANK[s] > (RANK[w] ?? -2) ? s : w), null);
   const fmt = (v, d = 1) => (v == null || !Number.isFinite(v) ? '—' : v.toFixed(d));
-  const pmax = (arr) => (arr ? Math.max(...arr) : null);
+  const pmax = (arr) => { const v = (arr || []).filter((x) => x != null); return v.length ? Math.max(...v) : null; };
 
   // ---------------------------------------------------------------- monitors
   function monitors(tb1, tb2) {
     const L1 = tb1.limits, L2 = tb2.limits, s1 = tb1.series, s2 = tb2.series;
-    const vKey = L1.voltage_winding === 'primary' ? 'v_pri' : 'v_sec';
-    const farthest = (m) => { const a = s1[vKey + '_min'][m], b = s1[vKey + '_max'][m]; return a == null ? null : (Math.abs(a) > Math.abs(b) ? a : b); };
+    // both windings are judged: primary +-6 %, secondary +6 / -9 %. The card shows the deviation that is
+    // closest to its own limit (as a fraction of that limit).
+    const VW = [{ key: 'v_pri', hi: L1.voltage_primary_high_pct, lo: L1.voltage_primary_low_pct },
+      { key: 'v_sec', hi: L1.voltage_secondary_high_pct, lo: L1.voltage_secondary_low_pct }];
+    const farthest = (m) => {
+      let best = null, score = -1;
+      for (const w of VW) {
+        const a = s1[w.key + '_min'][m], b = s1[w.key + '_max'][m];
+        if (a == null) continue;
+        for (const v of [a, b]) { const sc = v >= 0 ? v / w.hi : -v / w.lo; if (sc > score) { score = sc; best = v; } }
+      }
+      return best;
+    };
+    const vLines = (hi, lo) => [{ y: hi, label: `Over-voltage +${hi} %`, level: 'WARNING' }, { y: -lo, label: `Under-voltage −${lo} %`, level: 'WARNING' }];
     const prec = (tb, dev, every) => ({
       metric: `R / Y / B deviation from reference · limit ${tb.limits.precision_max_pct} % · ${every}`,
       value: (i) => pmax(tb.series[`prec_${dev}`][i]), unit: '%', digits: 2, status: (i) => tb.status[`prec_${dev}`][i],
@@ -47,17 +59,16 @@
           { name: 'Max in minute', values: s1.loading_max, color: C.a }, { name: 'Mean', values: s1.loading_mean, color: C.b, dash: '4 3' }],
           lines: [{ y: L1.overload_warning_pct, label: `Warning ${L1.overload_warning_pct} %`, level: 'WARNING' },
             { y: L1.overload_trip_pct, label: `Trip ${L1.overload_trip_pct} %`, level: 'CRITICAL' }] }] },
-      { id: 'voltage', tb: 1, name: `Voltage (${L1.voltage_winding} winding)`,
-        metric: `${L1.voltage_class.replace('_', '/')} class · +${L1.voltage_high_pct} % / −${L1.voltage_low_pct} % · 20 ms`,
+      { id: 'voltage', tb: 1, name: 'Voltage (primary + secondary)',
+        metric: `primary +${L1.voltage_primary_high_pct} / −${L1.voltage_primary_low_pct} % · secondary +${L1.voltage_secondary_high_pct} / −${L1.voltage_secondary_low_pct} % · 20 ms`,
         value: farthest, unit: '%', signed: true, status: (m) => tb1.status.voltage[m], slot: 4, windows: 'VOLTAGE',
         charts: () => [
-          { title: `${L1.voltage_winding === 'primary' ? 'Primary' : 'Secondary'} voltage deviation from nominal (min / max of each minute, %)`, unit: '%', series: [
-            { name: 'Max', values: s1[vKey + '_max'], color: C.a }, { name: 'Min', values: s1[vKey + '_min'], color: C.e }],
-            lines: [{ y: L1.voltage_high_pct, label: `Over-voltage +${L1.voltage_high_pct} %`, level: 'WARNING' },
-              { y: -L1.voltage_low_pct, label: `Under-voltage −${L1.voltage_low_pct} %`, level: 'WARNING' }] },
-          { title: `${L1.voltage_winding === 'primary' ? 'Secondary' : 'Primary'} voltage deviation (for reference, %)`, unit: '%', series: [
-            { name: 'Max', values: s1[(vKey === 'v_pri' ? 'v_sec' : 'v_pri') + '_max'], color: C.d },
-            { name: 'Min', values: s1[(vKey === 'v_pri' ? 'v_sec' : 'v_pri') + '_min'], color: C.m }] }] },
+          { title: 'Primary winding (11 kV) voltage deviation from nominal (min / max of each minute, %)', unit: '%', series: [
+            { name: 'Max', values: s1.v_pri_max, color: C.a }, { name: 'Min', values: s1.v_pri_min, color: C.e }],
+            lines: vLines(L1.voltage_primary_high_pct, L1.voltage_primary_low_pct) },
+          { title: 'Secondary winding (433 V) voltage deviation from nominal (min / max of each minute, %)', unit: '%', series: [
+            { name: 'Max', values: s1.v_sec_max, color: C.d }, { name: 'Min', values: s1.v_sec_min, color: C.m }],
+            lines: vLines(L1.voltage_secondary_high_pct, L1.voltage_secondary_low_pct) }] },
       { id: 'oti', tb: 1, name: 'Top oil (OTI)', metric: `absolute T_O · alarm ${L1.oti_alarm_c} °C, trip ${L1.oti_trip_c} °C · 1 s`,
         value: (m) => s1.top_oil[m], unit: '°C', status: (m) => tb1.status.oti[m], slot: 6,
         charts: () => [
@@ -278,8 +289,9 @@
       document.querySelectorAll('#ev-filters [data-filter]').forEach((x) => x.setAttribute('aria-pressed', x === b));
       state.filter = b.dataset.filter; renderEvents();
     }));
-    $('status').textContent = `CPRI 630 kVA · 11 / 0.433 kV · ${tb1.limits.voltage_class.replace('_', '/')} class: ${tb1.limits.voltage_winding} winding ` +
-      `+${tb1.limits.voltage_high_pct} / −${tb1.limits.voltage_low_pct} % · I_rated ${tb1.limits.i_rated_primary_a} A / ${tb1.limits.i_rated_secondary_a} A`;
+    const Lh = tb1.limits;
+    $('status').textContent = `CPRI 630 kVA · 11 / 0.433 kV · voltage: primary +${Lh.voltage_primary_high_pct} / −${Lh.voltage_primary_low_pct} %, ` +
+      `secondary +${Lh.voltage_secondary_high_pct} / −${Lh.voltage_secondary_low_pct} % · I_rated ${Lh.i_rated_primary_a} A / ${Lh.i_rated_secondary_a} A`;
 
     let lastModel = null;
     function render() {
@@ -379,8 +391,11 @@
           const L = tb1.limits, isV = m.windows === 'VOLTAGE';
           const t0 = Date.parse(w.start);
           drawChart(bar.parentNode, isV
-            ? { title: `${w.id.replaceAll('_', ' ')}: voltage deviation every 20 ms (%)`, unit: '%', series: [{ name: 'Per-cycle RMS', values: w.voltage_deviation_pct, color: C.a }],
-              lines: [{ y: L.voltage_high_pct, label: `+${L.voltage_high_pct} %`, level: 'WARNING' }, { y: -L.voltage_low_pct, label: `−${L.voltage_low_pct} %`, level: 'WARNING' }] }
+            ? { title: `${w.id.replaceAll('_', ' ')}: voltage deviation every 20 ms (%)`, unit: '%', series: [
+                { name: 'Primary', values: w.voltage_deviation_pct, color: C.a }, { name: 'Secondary', values: w.voltage_secondary_pct, color: C.d }],
+              lines: [{ y: L.voltage_primary_high_pct, label: `+${L.voltage_primary_high_pct} % (both)`, level: 'WARNING' },
+                { y: -L.voltage_primary_low_pct, label: `−${L.voltage_primary_low_pct} % primary`, level: 'WARNING' },
+                { y: -L.voltage_secondary_low_pct, label: `−${L.voltage_secondary_low_pct} % secondary`, level: 'WARNING' }] }
             : { title: `${w.id.replaceAll('_', ' ')}: loading every 20 ms (%)`, unit: '%', series: [{ name: 'Per-cycle RMS', values: w.loading_pct, color: C.a }],
               lines: [{ y: L.overload_warning_pct, label: `Warning ${L.overload_warning_pct} %`, level: 'WARNING' }, { y: L.overload_trip_pct, label: `Trip ${L.overload_trip_pct} %`, level: 'CRITICAL' }] },
           { range: [0, w.loading_pct.length - 1], cursor: null, events: [], xLabel: (k) => new Date(t0 + k * w.dt * 1000).toISOString().slice(11, 22) });

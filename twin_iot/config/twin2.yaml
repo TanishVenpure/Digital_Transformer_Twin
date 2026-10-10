@@ -9,15 +9,14 @@ transformer:
   rated_kva: 630.0
   primary_kv: 11.0             # line-to-line
   secondary_kv: 0.433          # line-to-line
-  # MV_LV: primary winding judged on +-6 %.  HV: secondary winding judged on +6 % / -9 %.
-  voltage_class: MV_LV
+  voltage_class: MV_LV         # shown in the header; both windings are judged (electrical.voltage_limits)
 
 electrical:
   overload_warning_pct: 100.0  # loading = I / I_rated x 100
   overload_trip_pct: 120.0
-  voltage_limits:
-    MV_LV: {winding: primary, high_pct: 6.0, low_pct: 6.0}
-    HV: {winding: secondary, high_pct: 6.0, low_pct: 9.0}
+  voltage_limits:              # both windings are judged, each against its own band
+    primary: {high_pct: 6.0, low_pct: 6.0}      # 11 kV side: +-6 %
+    secondary: {high_pct: 6.0, low_pct: 9.0}    # 433 V side: +6 % high, -9 % low
 
 precision:
   # Each device (current CT, voltage PT, temperature probe) is checked per phase against a reference
