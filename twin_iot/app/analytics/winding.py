@@ -13,6 +13,11 @@ sludge) or a developing winding fault makes the winding run hotter at the same l
 weekly mean excess grows. WINDING_EXCESS_HEATING is flagged when it is >= `min_excess` K and
 has risen for `consecutive` weeks in a row.
 
+When the top-oil temperature is measured too, the expected hot-spot rise uses the measured
+top-oil rise + the modelled gradient (IEC 60076-7 measured-top-oil method). A cooling / radiator
+problem then shows up on the top-oil review (app/analytics/top_oil.py), and the winding excess is
+only what happens inside the winding (blocked ducts, winding fault).
+
 Insulation ageing (IEC 60076-7, non-thermally-upgraded paper): relative ageing rate
 V = 2 ** ((hot_spot - 98) / 6); loss of life = sum(V * hours) / 24 equivalent days.
 The model parameters are generic defaults: calibrate them against the transformer's heat-run
@@ -78,20 +83,25 @@ def ageing_rate(hot_spot_c: float, config: ThermalConfig) -> float:
     return 2 ** ((hot_spot_c - config.ageing_reference_c) / config.ageing_doubling_k)
 
 
-def analyse(rows: list[tuple[datetime, float | None, float | None, float | None]],
-            config: ThermalConfig | None = None) -> dict[str, Any]:
-    """rows: (timestamp, measured hot-spot rise K, loading % of rated, ambient degC) in time order."""
+def analyse(rows: list[tuple], config: ThermalConfig | None = None) -> dict[str, Any]:
+    """rows: (timestamp, measured hot-spot rise K, loading % of rated, ambient degC[, measured top-oil
+    rise K]) in time order. With the top-oil rise, expected = measured top-oil rise + model gradient."""
+    from app.analytics.top_oil import expected_components
     config = config or ThermalConfig()
     out: dict[str, Any] = {"expected": [], "weeks": [], "reviews": [], "flags": [], "loss_of_life_days": 0.0}
     if not rows:
         return out
     expected = expected_rises([r[2] for r in rows], config)
+    if any(len(r) > 4 and r[4] is not None for r in rows):
+        comps = expected_components([r[2] for r in rows], config)
+        expected = [round(r[4] + c[1], 2) if (c is not None and len(r) > 4 and r[4] is not None) else e
+                    for r, c, e in zip(rows, comps, expected)]
     out["expected"] = expected
 
     start = rows[0][0].replace(hour=0, minute=0, second=0, microsecond=0)
     weeks: list[dict[str, Any]] = []
     cumulative = 0.0
-    for (t, rise, _, ambient), exp in zip(rows, expected):
+    for (t, rise, _, ambient, *_), exp in zip(rows, expected):
         k = int((t - start).total_seconds() // (config.review_days * 86400))
         while len(weeks) <= k:
             ws = start + timedelta(days=config.review_days * len(weeks))

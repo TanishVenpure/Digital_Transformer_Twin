@@ -23,6 +23,8 @@ actions:
     WARNING: "Check cooling (fans, radiators) and loading."
     PREDICTED_MAINTENANCE: "Schedule cooling-system check before the trip temperature is reached."
     CRITICAL: "Reduce load and inspect cooling system; transformer at trip temperature."
+    COOLING_DEGRADED: "Top-oil runs hotter than its load and weather explain: clean the radiator fins, check radiator valves are fully open and nothing blocks air flow; if cooling does not recover, check oil level and oil condition."
+    OIL_AGEING: "Cleaning recovers less each time and the interval keeps shrinking: test the oil (acidity, interfacial tension, moisture, DGA) and plan oil filtration / reclamation instead of more cleanings."
   winding_temperature:
     WARNING: "Check cooling and loading; review winding temperature trend."
     PREDICTED_MAINTENANCE: "Schedule thermal inspection before winding rise limit is reached."

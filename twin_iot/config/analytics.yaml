@@ -27,3 +27,18 @@ winding_thermal:        # IEC 60076-7 style model, ONAN distribution transformer
   review_days: 7
   min_excess: 1.5             # flag when the winding runs >= 1.5 K above the model ...
   consecutive: 2              # ... and the excess has grown 2 weeks in a row
+
+top_oil:                # same oil model as winding_thermal; alarm / trip / rise limits from thresholds.yaml
+  min_expected_rise: 8.0      # K: skip hours where the load explains too little rise to compare
+  low_oil_level: 25.0         # % gauge: conservator nearly empty, radiator tops run dry -> heat counted as low oil
+  clean_below: 80.0           # % cooling health -> COOLING_DEGRADED (recommend radiator cleaning)
+  rolling_hours: 24
+  recovery_skip_hours: 6      # oil settles after a cleaning
+  recovery_hours: 48          # cooling health recovered after a cleaning = mean over 48 h
+  jump_detect: 8.0            # % points day-on-day rise = a cleaning (only without a maintenance log)
+  min_recovery_drop: 1.5      # OIL_AGEING when recovered health falls >= 1.5 points per cycle ...
+  consecutive: 2              # ... 2 cycles in a row
+  reference_ambient: 30.0     # weather-adjusted top-oil = at rated load on a 30 degC day
+  trend_days: 14
+  horizon_days: 60
+  min_gradient_excess: 1.5    # K of weekly excess counted as a problem (winding cross-check)

@@ -19,6 +19,9 @@ def test_every_monitor_degrades_to_critical_and_is_repaired():
     assert repairs["voltage"] == []   # supply voltage is external; nothing to repair
     for slot, statuses in seen.items():
         assert "NORMAL" in statuses
+        if slot == 6:   # top-oil: radiators are cleaned on cooling condition, so the trip is never reached
+            assert "CRITICAL" not in statuses, statuses
+            continue
         assert {"CRITICAL", "MAINTENANCE_REQUIRED"} & statuses, (slot, statuses)
 
 
@@ -26,3 +29,16 @@ def test_same_seed_gives_same_data():
     a, _ = generate(start=START, days=2, seed=3)
     b, _ = generate(start=START, days=2, seed=3)
     assert list(a) == list(b)
+
+
+def test_top_oil_cleaning_intervals_shorten_and_oil_gauge_follows_temperature():
+    readings, repairs = generate(start=START, days=90, seed=7, invalid_rate=0)
+    rows = list(readings)
+    days = [h / 24 for h in repairs["top_oil"]]
+    intervals = [b - a for a, b in zip(days, days[1:])]
+    assert len(intervals) >= 3 and all(b < a for a, b in zip(intervals, intervals[1:]))
+    # conservator gauge rises with oil temperature within a day (no top-up on day 2)
+    day = [data for _, data in rows[24:48]]
+    hot = max(day, key=lambda d: d["top_oil_temperature"])
+    cold = min(day, key=lambda d: d["top_oil_temperature"])
+    assert hot["oil_level"] > cold["oil_level"]

@@ -14,7 +14,7 @@
   const NS = 'http://www.w3.org/2000/svg';
   const RANGES = { '7d': 7 * 24, '30d': 30 * 24, all: Infinity };
   // Reference "as new" level per monitor slot, for the health % view.
-  const REFERENCE = { 1: 0, 2: 0, 3: 60, 4: 0, 5: 86, 6: 55, 7: 25 };
+  const REFERENCE = { 1: 0, 2: 0, 3: 60, 4: 0, 5: 86, 6: 35, 7: 25 };
 
   function el(tag, attrs, parent) {
     const e = document.createElementNS(NS, tag);
@@ -92,7 +92,39 @@
       const loadFlags = isLoad ? load.flags.filter((f) => Date.parse(f.detected_at) <= tEnd) : [];
       return { st, iot, pts, t0, tEnd, domainEnd, checks, repairs, now: frames[end], isOil, cycles, flags, allCycles: isOil ? leak.cycles.filter((c) => c.end && Date.parse(c.end) <= tEnd) : [],
         isLoad, review: reviews[reviews.length - 1] || null, loadFlags,
-        ...windingData(st, slot, start, end, tEnd) };
+        ...windingData(st, slot, start, end, tEnd), ...topOilData(st, slot, start, end, tEnd) };
+    }
+
+    // top-oil: expected top-oil (load + weather), heat breakdown, cooling health, cleaning cycles, oil ageing.
+    // Everything is cut at the playback hour (no look-ahead); the cleaning-due forecast is fitted live.
+    function topOilData(st, s, start, end, tEnd) {
+      const a = st.data.analytics && st.data.analytics.top_oil;
+      if (!a || a.slot !== s) return { isTopOil: false };
+      const H = a.hourly, sl = (arr) => arr.slice(start, end + 1), frames = st.data.frames;
+      const cleaned = a.cycles.filter((c) => c.started_by_cleaning && Date.parse(c.start) <= tEnd);
+      const lastClean = cleaned.length ? Date.parse(cleaned[cleaned.length - 1].start) : Date.parse(frames[0].t);
+      // cleaning due: straight line through cooling health since the last cleaning (+6 h settling)
+      let due = null;
+      const xs = [], ys = [];
+      for (let k = 0; k <= end; k++) {
+        const t = Date.parse(frames[k].t), h = H.cooling_health[k];
+        if (h != null && t >= lastClean + 6 * 3600e3) { xs.push(t / 86400e3); ys.push(h); }
+      }
+      if (xs.length >= 72) {
+        const n = xs.length, mx = xs.reduce((p, x) => p + x, 0) / n, my = ys.reduce((p, y) => p + y, 0) / n;
+        let sxy = 0, sxx = 0;
+        xs.forEach((x, i) => { sxy += (x - mx) * (ys[i] - my); sxx += (x - mx) ** 2; });
+        const slope = sxx ? sxy / sxx : 0, now = my + slope * (xs[n - 1] - mx);
+        if (slope < 0) due = Math.max(0, (now - a.clean_below) / -slope);
+      }
+      const weeks = a.weeks.filter((w) => w.complete && Date.parse(w.end) <= tEnd);
+      return { isTopOil: true, cleanBelow: a.clean_below,
+        toExpected: sl(H.expected), toAmbient: sl(H.ambient), toCool: sl(H.cooling_k), toLow: sl(H.low_oil_k), toHealth: sl(H.cooling_health),
+        toCycles: cleaned.filter((c) => c.end && Date.parse(c.end) <= tEnd),
+        toRecovered: cleaned.filter((c) => c.recovered_health != null && Date.parse(c.start) + 3 * 86400e3 <= tEnd).map((c) => c.recovered_health),
+        toChecks: a.cooling_checks.filter((f) => Date.parse(f.detected_at) <= tEnd && Date.parse(f.detected_at) >= lastClean),
+        toFlags: a.flags.filter((f) => Date.parse(f.detected_at) <= tEnd),
+        toWeek: weeks[weeks.length - 1] || null, toDue: due };
     }
 
     // winding: hourly expected rise (thermal model) for the window + latest weekly review / flags
@@ -125,6 +157,7 @@
 
     function stats(w, m) {
       const last = w.pts[w.pts.length - 1];
+      if (w.isTopOil) return topOilStats(w, m, last);
       const valid = w.pts.filter((p) => p.s);
       const healthy = valid.length ? Math.round((100 * valid.filter((p) => p.s === 'NORMAL').length) / valid.length) : null;
       const [num, unit] = last.v == null ? ['—', ''] : m.fmt(last.v);
@@ -141,10 +174,55 @@
         `<div class="stat"><span>${k}</span><b>${v}</b><small>${s}</small></div>`).join('');
     }
 
+    const DIAGNOSIS = {
+      healthy: 'top-oil and winding both match the thermal model',
+      cooling: 'top-oil and winding run hot together → radiators / oil, not the windings',
+      ducts: 'only the winding runs hot → internal winding cooling ducts',
+      both: 'radiators / oil degraded and the winding ducts as well',
+    };
+    function topOilStats(w, m, last) {
+      const k = w.pts.length - 1, [num, unit] = last.v == null ? ['—', ''] : m.fmt(last.v);
+      const amb = w.toAmbient[k], exp = w.toExpected[k], fault = (w.toCool[k] || 0) + (w.toLow[k] || 0);
+      const why = amb == null || exp == null || last.v == null ? '—'
+        : `${amb.toFixed(0)}+${(exp - amb).toFixed(0)}+${Math.max(0, fault).toFixed(0)}`;
+      const h = w.toHealth[k], lastRepair = w.repairs.length ? w.repairs[w.repairs.length - 1].ts.slice(0, 10) : null;
+      const tiles = [
+        ['Measured', num + unit, 'top-oil now'],
+        ['Cooling health', h == null ? '—' : Math.round(h) + '%', '100% = radiators as designed'],
+        ['Why it\'s hot', why, 'ambient + load + fault, °C'],
+        ['Weather-adjusted', w.toWeek && w.toWeek.normalised_top_oil_c != null ? w.toWeek.normalised_top_oil_c.toFixed(1) + '°C' : '—', 'rated load on a 30 °C day (last week)'],
+        ['Cleaning due', w.toDue == null ? '—' : w.toDue < 0.5 ? 'now' : '~' + Math.round(w.toDue) + ' d', `cooling trend to ${w.cleanBelow}%`],
+        ['Cleanings done', String(w.repairs.length), lastRepair ? 'last ' + lastRepair : 'none in window'],
+      ];
+      document.getElementById('metric-stats').innerHTML = tiles.map(([key, v, s]) =>
+        `<div class="stat"><span>${key}</span><b>${v}</b><small>${s}</small></div>`).join('');
+    }
+
     function banner(w) {
       const el = document.getElementById('metric-banner');
       document.getElementById('legend-trend').hidden = !w.isLoad;
-      document.getElementById('legend-expected').hidden = !w.isWinding;
+      document.getElementById('legend-expected').hidden = !(w.isWinding || w.isTopOil);
+      document.getElementById('legend-expected-text').textContent = w.isTopOil
+        ? 'Expected from load + weather (thermal model)' : 'Expected at this load (thermal model)';
+      document.querySelectorAll('.legend-topoil').forEach((x) => x.hidden = !w.isTopOil);
+      if (w.isTopOil) {
+        const flag = w.toFlags[w.toFlags.length - 1], check = w.toChecks[w.toChecks.length - 1];
+        const k = w.pts.length - 1, h = w.toHealth[k];
+        const arrows = (xs, f) => xs.slice(-4).map(f).join(' → ');
+        const intervals = w.toCycles.map((c) => c.interval_days).filter((x) => x);
+        const cross = w.toWeek ? ` · winding check: ${DIAGNOSIS[w.toWeek.diagnosis]}` : '';
+        el.hidden = false;
+        el.className = 'banner' + (flag || check ? ' alert' : '');
+        if (flag) {
+          el.innerHTML = `<b>Oil ageing</b> flagged ${flag.detected_at.slice(0, 10)}: ${flag.message.replace(/^Oil ageing: /, '')}${cross}`;
+        } else {
+          el.innerHTML = `<b>Cooling review:</b> cooling health ${h == null ? '—' : Math.round(h) + '%'}`
+            + (check ? ` · <b>clean radiators</b> (below ${w.cleanBelow}% since ${check.detected_at.slice(0, 10)})` : '')
+            + (w.toRecovered.length ? ` · after each cleaning ${arrows(w.toRecovered, (x) => Math.round(x))}%` : ' · no cleaning yet')
+            + (intervals.length ? ` · cleaning intervals ${arrows(intervals, (x) => x.toFixed(1))} d` : '') + cross;
+        }
+        return;
+      }
       if (w.isWinding) {
         const r = w.thermalReview, flag = w.thermalFlags[w.thermalFlags.length - 1];
         el.hidden = false;
@@ -208,7 +286,8 @@
       let lo, hi;
       if (health) { lo = Math.min(-10, ...vals); hi = 100; }
       else {
-        lo = Math.min(...vals, ...limits.map((l) => l.value)); hi = Math.max(...vals, ...limits.map((l) => l.value));
+        const extra = w.isTopOil ? w.toAmbient.filter((v) => v != null) : [];
+        lo = Math.min(...vals, ...extra, ...limits.map((l) => l.value)); hi = Math.max(...vals, ...limits.map((l) => l.value));
         const pad = (hi - lo) * 0.08 || 1; lo -= pad; hi += pad;
       }
       const X = (t) => M.l + ((t - w.t0) / Math.max(1, w.domainEnd - w.t0)) * PW;
@@ -303,12 +382,58 @@
         tx.textContent = `${l.name} ${lbl}`;
       }
 
-      // winding: rise the thermal model expects at this load (dashed) - the gap to the metric is the excess
-      if (w.isWinding && w.expected) {
+      // top-oil: where the heat comes from - load band (ambient -> expected) and fault bands (expected -> measured)
+      if (w.isTopOil) {
+        const conv = (v) => (health ? healthOf(slot, v, iot) : v);
+        const band = (lower, upper, fill, opacity) => {
+          let run = [];
+          const flush = () => {
+            if (run.length > 1) {
+              const top = run.map(([x, , u]) => `${x.toFixed(1)},${Y(conv(u)).toFixed(1)}`);
+              const bot = run.slice().reverse().map(([x, l]) => `${x.toFixed(1)},${Y(conv(l)).toFixed(1)}`);
+              el('path', { d: 'M' + top.join('L') + 'L' + bot.join('L') + 'Z', fill, opacity, stroke: 'none' }, g);
+            }
+            run = [];
+          };
+          w.pts.forEach((p, k) => {
+            const l = lower(p, k), u = upper(p, k);
+            if (l == null || u == null) flush(); else run.push([X(p.t), l, u]);
+          });
+          flush();
+        };
+        if (!health) band((p, k) => w.toAmbient[k], (p, k) => w.toExpected[k], '#64748b', 0.22);
+        band((p, k) => w.toExpected[k], (p, k) => (p.v == null || w.toExpected[k] == null ? null
+          : w.toExpected[k] + Math.max(0, Math.min(p.v - w.toExpected[k], w.toCool[k] || 0))), '#f59e0b', 0.35);
+        band((p, k) => (w.toLow[k] > 0.3 && w.toExpected[k] != null ? w.toExpected[k] + Math.max(0, w.toCool[k] || 0) : null),
+          (p, k) => (w.toLow[k] > 0.3 ? p.v : null), '#ef4444', 0.4);
+        if (!health) {
+          let da = '', on = false;
+          w.pts.forEach((p, k) => {
+            const a = w.toAmbient[k];
+            if (a == null) { on = false; return; }
+            da += (on ? 'L' : 'M') + X(p.t).toFixed(1) + ',' + Y(a).toFixed(1); on = true;
+          });
+          el('path', { d: da, fill: 'none', stroke: '#8d9bab', 'stroke-width': 1, 'stroke-dasharray': '1 3', opacity: 0.8 }, g);
+        }
+        // completed cleaning cycles: interval and cooling health recovered after the cleaning
+        w.toCycles.forEach((c, k) => {
+          const a = Math.max(Date.parse(c.start), w.t0), b = Date.parse(c.end);
+          const px = X(b) - X(a);
+          if (b < w.t0 || px < 40) return;
+          const label = px >= 150 && c.recovered_health != null
+            ? `${c.interval_days.toFixed(1)} d · cleaned to ${Math.round(c.recovered_health)}%` : `${c.interval_days.toFixed(0)}d`;
+          const tx = el('text', { x: X((a + b) / 2), y: M.t + (px < 150 && k % 2 ? 28 : 14), 'text-anchor': 'middle', class: 'cyc' }, g);
+          tx.textContent = label;
+        });
+      }
+
+      // winding / top-oil: what the thermal model expects at this load (dashed) - the gap to the metric is the excess
+      const expectedLine = w.isTopOil ? w.toExpected : w.isWinding ? w.expected : null;
+      if (expectedLine) {
         const conv = (v) => (health ? healthOf(slot, v, iot) : v);
         let de = '', on = false;
         w.pts.forEach((p, k) => {
-          const e = w.expected[k];
+          const e = expectedLine[k];
           if (e == null) { on = false; return; }
           de += (on ? 'L' : 'M') + X(p.t).toFixed(1) + ',' + Y(conv(e)).toFixed(1);
           on = true;
@@ -363,6 +488,7 @@
         tip.innerHTML = `<time>${new Date(best.t).toISOString().slice(0, 16).replace('T', ' ')} UTC</time>
           <div><b>${num}${unit}</b> · health ${best.h == null ? '—' : Math.round(best.h) + '%'}</div>
           <div class="pill s-${best.s || 'NONE'}">${best.s ? LABEL[best.s] : 'No data'}</div>
+          ${topOilTip(w, best)}
           ${repair ? `<div class="rep">Maintenance: ${repair.action}</div>` : ''}`;
         tip.hidden = false;
         const left = x + 14 + 220 > W ? x - 14 - 220 : x + 14;
@@ -372,6 +498,15 @@
       hit.addEventListener('pointermove', (e) => show(e.clientX));
       hit.addEventListener('pointerleave', () => { hoverX = null; hover.innerHTML = ''; tip.hidden = true; });
       if (hoverX != null) show(hoverX);
+    }
+
+    function topOilTip(w, p) {
+      if (!w.isTopOil || p.v == null) return '';
+      const k = w.pts.indexOf(p), amb = w.toAmbient[k], exp = w.toExpected[k];
+      if (amb == null || exp == null) return '';
+      const cool = w.toCool[k] || 0, low = w.toLow[k] || 0, h = w.toHealth[k];
+      return `<div>= ${amb.toFixed(0)} ambient + ${(exp - amb).toFixed(0)} load + ${cool.toFixed(1)} cooling${low > 0.3 ? ` + ${low.toFixed(1)} low oil` : ''} °C</div>`
+        + (h != null ? `<div>Cooling health ${Math.round(h)}%</div>` : '');
     }
 
     // controls

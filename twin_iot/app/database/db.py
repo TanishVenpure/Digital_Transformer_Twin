@@ -239,6 +239,16 @@ def rebuild_maintenance(connection, transformer_id: str, thresholds, actions) ->
             action=actions.get("winding_temperature", {}).get("WINDING_EXCESS_HEATING", "Inspect winding cooling."),
             reading_at={ts: rid for rid, ts, _ in rows},
         )
+        # cycle-trend flags: top-oil cooling degraded (clean radiators) and oil ageing (top-oil = slot 6)
+        oil_rule = thresholds["top_oil_temperature"]
+        cooling = top_oil_analysis(connection, transformer_id, thresholds)
+        for flags, key, fallback in ((cooling["cooling_checks"], "COOLING_DEGRADED", "Clean the radiators."),
+                                     (cooling["flags"], "OIL_AGEING", "Test the oil.")):
+            checks = add_trend_flags(
+                checks, flags, transformer_id=transformer_id, slot=oil_rule.iot_slot, names=names,
+                action=actions.get("top_oil_temperature", {}).get(key, fallback),
+                reading_at={ts: rid for rid, ts, _ in rows},
+            )
         cursor.execute("DELETE FROM maintenance_log WHERE transformer_id = %s", (transformer_id,))
         if checks:
             execute_values(cursor, """INSERT INTO maintenance_log (transformer_id, check_no, opened_at, iot_slot,
@@ -261,15 +271,62 @@ def oil_series(connection, transformer_id: str, slot: int) -> list[tuple]:
 
 
 def winding_inputs(connection, transformer_id: str, winding_slot: int, load_slot: int) -> list[tuple]:
-    """(timestamp, winding hot-spot rise K, loading % of rated, ambient degC) for every stored hour."""
+    """(timestamp, winding hot-spot rise K, loading % of rated, ambient degC, measured top-oil rise K)
+    for every stored hour."""
     with connection.cursor() as cursor:
         cursor.execute("""
-            SELECT r.ts, ew.value, el.value, (r.clean_data->>'ambient_temperature')::float
+            SELECT r.ts, ew.value, el.value, (r.clean_data->>'ambient_temperature')::float,
+                   (r.clean_data->>'top_oil_temperature')::float - (r.clean_data->>'ambient_temperature')::float
             FROM readings r
             LEFT JOIN iot_evaluations ew ON ew.reading_id = r.id AND ew.iot_slot = %s
             LEFT JOIN iot_evaluations el ON el.reading_id = r.id AND el.iot_slot = %s
             WHERE r.transformer_id = %s ORDER BY r.ts""", (winding_slot, load_slot, transformer_id))
         return cursor.fetchall()
+
+
+def top_oil_inputs(connection, transformer_id: str, load_slot: int, winding_slot: int) -> list[tuple]:
+    """(timestamp, top-oil degC, ambient degC, loading % hottest phase, RMS loading % of the three phases,
+    oil level %, winding hot-spot rise K) for every stored hour."""
+    phase = lambda p: f"(r.clean_data->>'current_{p}')::float"  # noqa: E731
+    with connection.cursor() as cursor:
+        cursor.execute(f"""
+            SELECT r.ts, (r.clean_data->>'top_oil_temperature')::float, (r.clean_data->>'ambient_temperature')::float,
+                   el.value,
+                   el.value * sqrt((power({phase('r')}, 2) + power({phase('y')}, 2) + power({phase('b')}, 2)) / 3)
+                     / NULLIF(greatest({phase('r')}, {phase('y')}, {phase('b')}), 0),
+                   (r.clean_data->>'oil_level')::float, ew.value
+            FROM readings r
+            LEFT JOIN iot_evaluations el ON el.reading_id = r.id AND el.iot_slot = %s
+            LEFT JOIN iot_evaluations ew ON ew.reading_id = r.id AND ew.iot_slot = %s
+            WHERE r.transformer_id = %s ORDER BY r.ts""", (load_slot, winding_slot, transformer_id))
+        return cursor.fetchall()
+
+
+def cleanings(connection, transformer_id: str, slot: int) -> list | None:
+    """Timestamps of maintenance performed on one IoT slot (None when there is no maintenance log at all)."""
+    with connection.cursor() as cursor:
+        cursor.execute("SELECT count(*) FROM maintenance_events WHERE transformer_id = %s", (transformer_id,))
+        if not cursor.fetchone()[0]:
+            return None
+        cursor.execute("SELECT ts FROM maintenance_events WHERE transformer_id = %s AND iot_slot = %s ORDER BY ts",
+                       (transformer_id, slot))
+        return [r[0] for r in cursor.fetchall()]
+
+
+def top_oil_limits(thresholds) -> dict:
+    """Top-oil alarm / trip / rise limits, from thresholds.yaml."""
+    rule = thresholds["top_oil_temperature"]
+    rise = next((c.threshold for c in (rule.extra_checks or ()) if c.detail == "top_oil_rise"), 40.0)
+    return {"alarm_c": rule.warning, "trip_c": rule.critical, "rise_limit": rise}
+
+
+def top_oil_analysis(connection, transformer_id: str, thresholds) -> dict:
+    from app.analytics import top_oil, winding
+    return {"slot": thresholds["top_oil_temperature"].iot_slot, **top_oil.analyse(
+        top_oil_inputs(connection, transformer_id, thresholds["current_loading"].iot_slot,
+                       thresholds["winding_temperature"].iot_slot),
+        cleanings(connection, transformer_id, thresholds["top_oil_temperature"].iot_slot),
+        top_oil.load_config(**top_oil_limits(thresholds)), winding.load_config())}
 
 
 def maintenance_sheet(connection, transformer_id: str, *, until=None, iot: int | None = None,

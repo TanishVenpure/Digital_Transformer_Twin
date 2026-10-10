@@ -20,6 +20,15 @@ top-oil rise + hot-spot gradient, both driven by per-phase loading. From `fault_
 restricted oil flow (blocked ducts / sludge) makes the gradient grow, so the winding runs
 hotter than its load explains (app/analytics/winding.py). Not repaired within the window.
 
+Top-oil temperature shares the same oil model (CoolingSystem): the top-oil rise the load
+produces is multiplied by the cooling condition (1 = as designed). Three things worsen it:
+radiator fouling (dust; fully removed by a cleaning), oil ageing / sludge (irreversible, so each
+cleaning recovers less and the next one is due sooner) and low oil level (the leak leaves the
+radiator tops dry once the conservator is nearly empty; gone after a top-up). The winding sits on
+top of the top oil, so it warms with it, and the conservator gauge follows the oil's thermal
+expansion. Radiators are cleaned shortly after cooling falls below `clean_below` of design
+(condition-based cleaning, recommended by app/analytics/top_oil.py at 80 %).
+
 Load current is NOT equipment wear and is never "repaired": it follows customer demand
 (LoadModel) - a daily curve, weekday/weekend, a gentle seasonal swing and slow demand
 growth - so overloads arrive more and more often (app/analytics/load_growth.py).
@@ -37,6 +46,10 @@ from app.simulation.random_source import corrupt
 
 RATED_CURRENT = 841.0
 NOMINAL_VOLTAGE = 250.0
+# Conservator gauge vs oil temperature: oil expands ~0.07 %/K by volume; with the conservator sized
+# for the tank, the gauge moves roughly 0.3 % of scale per K around its 50 degC reference.
+OIL_GAUGE_PER_K = 0.3
+OIL_GAUGE_REFERENCE_C = 50.0
 
 
 @dataclass(frozen=True)
@@ -158,11 +171,12 @@ class WindingThermal:
         self.oil_rise: float | None = None
         self.gradients: list[float] | None = None
 
-    def step(self, hour: int, k_phases: list[float]) -> list[float]:
-        """Hourly step; returns the hot-spot rise over ambient for each phase (K)."""
+    def step(self, hour: int, k_phases: list[float], cooling: float = 1.0) -> list[float]:
+        """Hourly step; returns the hot-spot rise over ambient for each phase (K). `cooling` multiplies
+        the top-oil rise (CoolingSystem); self.oil_rise is the top-oil rise after the step."""
         p = self.p
         k2 = sum(k * k for k in k_phases) / len(k_phases)
-        oil_ss = p.top_oil_rise_rated * ((1 + p.loss_ratio * k2) / (1 + p.loss_ratio)) ** p.oil_exponent
+        oil_ss = cooling * p.top_oil_rise_rated * ((1 + p.loss_ratio * k2) / (1 + p.loss_ratio)) ** p.oil_exponent
         a_oil = 1 - math.exp(-60 / p.tau_oil_min)
         self.oil_rise = oil_ss if self.oil_rise is None else self.oil_rise + (oil_ss - self.oil_rise) * a_oil
         fault = 1 + max(0.0, hour / 24 - p.fault_onset_day) * p.fault_growth_per_day
@@ -170,6 +184,44 @@ class WindingThermal:
         a_w = 1 - math.exp(-60 / p.tau_winding_min)
         self.gradients = grad_ss if self.gradients is None else [g + (ss - g) * a_w for g, ss in zip(self.gradients, grad_ss)]
         return [self.oil_rise + g for g in self.gradients]
+
+
+@dataclass(frozen=True)
+class CoolingProfile:
+    """ONAN radiator cooling: multiplier on the top-oil rise (1 = design)."""
+    fouling_per_day: float = 0.012      # dust on the radiators: +1.2 % rise per day
+    fouling_jitter: float = 0.3
+    ageing_per_day: float = 0.0015      # sludge / oil oxidation: never removed by a cleaning
+    clean_below: float = 0.78           # crew dispatched once cooling falls below 78 % of design (the twin
+    clean_delay_hours: tuple[int, int] = (12, 36)   # recommends cleaning at 80 %) and cleans 12-36 h later
+    clean_residual: tuple[float, float] = (0.0, 0.02)
+    low_oil_level: float = 25.0         # % of gauge: the conservator is nearly empty, the radiator tops start to run dry
+    low_oil_effect: float = 0.25        # extra rise multiplier at the 20 % minimum level
+
+
+class CoolingSystem:
+    def __init__(self, rng: random.Random, profile: CoolingProfile = CoolingProfile()):
+        self.rng, self.p = rng, profile
+        self.fouling = rng.uniform(0.0, 0.04)
+        self.ageing = 0.0
+        self.clean_at: int | None = None
+        self.cleanings: list[int] = []
+
+    def step(self, hour: int, oil_level: float) -> float:
+        """Hourly step; returns the multiplier on the top-oil rise."""
+        p = self.p
+        self.fouling += p.fouling_per_day / 24 * self.rng.uniform(1 - p.fouling_jitter, 1 + p.fouling_jitter)
+        self.ageing += p.ageing_per_day / 24
+        radiators = 1 + self.fouling + self.ageing
+        if self.clean_at is None and 1 / radiators < p.clean_below:
+            self.clean_at = hour + self.rng.randint(*p.clean_delay_hours)
+        if self.clean_at is not None and hour >= self.clean_at:
+            self.cleanings.append(hour)
+            self.fouling = self.rng.uniform(*p.clean_residual)
+            self.clean_at = None
+            radiators = 1 + self.fouling + self.ageing
+        dry = max(0.0, min(1.0, (p.low_oil_level - oil_level) / (p.low_oil_level - 20.0)))
+        return radiators + p.low_oil_effect * dry
 
 
 class GridVoltage:
@@ -201,7 +253,8 @@ def phase_loadings(loading: float) -> list[float]:
 
 
 def reading_from_levels(levels: dict[str, float], hour: int, rng: random.Random, loading: float | None = None,
-                        grid_deviation: float | None = None, winding_rises: list[float] | None = None) -> dict[str, Any]:
+                        grid_deviation: float | None = None, winding_rises: list[float] | None = None,
+                        top_oil_rise: float | None = None) -> dict[str, Any]:
     day = 2 * math.pi * (hour % 24) / 24
     noise = lambda s: rng.gauss(0, s)  # noqa: E731
     ambient = 30 + 6 * math.sin(day - math.pi / 2) + noise(0.5)
@@ -231,12 +284,19 @@ def reading_from_levels(levels: dict[str, float], hour: int, rng: random.Random,
         data[f"reference_voltage_{phase}"] = round(true_voltage, 1)
         data[f"voltage_{phase}"] = round(true_voltage * (1 - error / 100), 1)
 
-    # Oil level: leak drains from ~86 % toward the 20 % minimum.
-    data["oil_level"] = round(86 - 66.5 * levels["oil"] + noise(0.4), 1)
+    # Top oil: ambient + rise from the shared oil model (load x cooling condition), else the old placeholder.
+    expansion = top_oil_rise is not None
+    if top_oil_rise is None:
+        top_oil_rise = 24 + 4 * math.sin(day - math.pi / 2) + 50 * levels["top_oil"]
+    top_oil = ambient + top_oil_rise
+    data["top_oil_temperature"] = round(top_oil + noise(0.6), 1)
 
-    # Top oil: ambient + rise; cooling degradation raises the rise until the 105 degC trip.
-    rise = 24 + 4 * math.sin(day - math.pi / 2) + 50 * levels["top_oil"] + noise(0.6)
-    data["top_oil_temperature"] = round(ambient + rise, 1)
+    # Oil level: leak drains from ~86 % toward the 20 % minimum (at the gauge reference temperature);
+    # with the shared oil model the conservator gauge also follows oil thermal expansion.
+    level = 86 - 66.5 * levels["oil"]
+    if expansion:
+        level += OIL_GAUGE_PER_K * (top_oil - OIL_GAUGE_REFERENCE_C)
+    data["oil_level"] = round(level + noise(0.4), 1)
 
     # Winding: hottest-phase rise over ambient reaches 45 K at critical.
     if winding_rises is not None:   # thermal model driven by load (fibre-optic probe = hot-spot)
@@ -264,15 +324,22 @@ def generate(
     repairs["voltage"] = []   # supply voltage is external, nothing to repair
     repairs["winding"] = []   # duct blockage needs an internal inspection; not repaired in the window
     winding = WindingThermal()
+    cooling = CoolingSystem(random.Random((seed or 0) + 3041))
+    repairs["top_oil"] = cooling.cleanings   # radiator cleanings
     load = LoadModel(start, random.Random((seed or 0) + 1009))
     grid = GridVoltage(random.Random((seed or 0) + 2027))
 
     def readings():
+        top_oil = OIL_GAUGE_REFERENCE_C   # previous hour's top-oil: the oil's expansion sets how full the radiators are
         for hour in range(days * 24):
             levels = {name: state.step(hour) for name, state in states.items()}
             loading = load.loading(hour)
+            gauge = 86 - 66.5 * levels["oil"] + OIL_GAUGE_PER_K * (top_oil - OIL_GAUGE_REFERENCE_C)
+            factor = cooling.step(hour, oil_level=gauge)
+            rises = winding.step(hour, phase_loadings(loading), cooling=factor)
             data = reading_from_levels(levels, hour, rng, loading=loading, grid_deviation=grid.deviation(hour),
-                                       winding_rises=winding.step(hour, phase_loadings(loading)))
+                                       winding_rises=rises, top_oil_rise=winding.oil_rise)
+            top_oil = data["top_oil_temperature"]
             yield start + timedelta(hours=hour), corrupt(data, rng, invalid_rate)
 
     return readings(), repairs

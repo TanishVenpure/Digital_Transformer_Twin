@@ -55,9 +55,10 @@ def main() -> None:
         actions = load_actions()
         slot_of = dict(zip(degradation_source.MONITORS, range(1, 8)))
         formula_of = {rule.iot_slot: name for name, rule in service.thresholds.items()}
+        performed = {"top_oil": "Radiator fins cleaned; cooling restored (oil ageing is not removed by cleaning)."}
         events = [
             (args.transformer, start + timedelta(hours=hour), slot_of[monitor],
-             (lambda a: a.get("CRITICAL") or a.get("MAINTENANCE_REQUIRED") or "Maintenance performed.")(
+             performed.get(monitor) or (lambda a: a.get("CRITICAL") or a.get("MAINTENANCE_REQUIRED") or "Maintenance performed.")(
                  actions.get(formula_of[slot_of[monitor]], {})), "simulated")
             for monitor, hours in repairs.items() for hour in hours
         ]

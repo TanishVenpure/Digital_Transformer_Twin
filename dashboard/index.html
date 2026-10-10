@@ -304,6 +304,7 @@
   .chart-legend .inv { color: var(--accent); }
   .chart-legend .ln { width: 16px; height: 0; border-top: 2px solid #38bdf8; }
   .chart-legend .dash { width: 16px; height: 0; border-top: 2px dashed var(--c); }
+  .chart-legend .band { width: 12px; height: 9px; border-radius: 2px; background: var(--c); opacity: .55; }
   .chart-legend .tri { width: 0; height: 0; border-left: 5px solid transparent; border-right: 5px solid transparent; border-top: 7px solid var(--muted); }
   .chart-legend .mnt { width: 13px; height: 13px; border-radius: 50%; border: 1.5px solid var(--text); font: 700 8px/10px var(--font); text-align: center; color: var(--text); }
   .plot { position: relative; height: 360px; margin: 6px 10px 0; }
@@ -543,7 +544,10 @@
       <span><i class="tri"></i>Maintenance check raised (colour = signal)</span>
       <span><i class="mnt">M</i>Maintenance performed</span>
       <span id="legend-inverted" hidden class="inv">&#8595; Axis inverted: higher values are plotted lower, so heading toward the limit reads as a decline</span>
-      <span id="legend-expected" hidden><i class="dash" style="--c:#e8eef5"></i>Expected at this load (thermal model)</span>
+      <span id="legend-expected" hidden><i class="dash" style="--c:#e8eef5"></i><span id="legend-expected-text">Expected at this load (thermal model)</span></span>
+      <span class="legend-topoil" hidden><i class="band" style="--c:#64748b"></i>Heat from load</span>
+      <span class="legend-topoil" hidden><i class="band" style="--c:#f59e0b"></i>Cooling fault</span>
+      <span class="legend-topoil" hidden><i class="band" style="--c:#ef4444"></i>Low oil</span>
       <span id="legend-trend" hidden><i class="ln" style="border-top-color:#e8eef5"></i>Daily-peak trend (dashed = projection)</span>
       <span>Strip below = status per hour</span>
     </div>
@@ -584,8 +588,11 @@
       title: "Overloads are becoming more frequent: demand is growing toward the transformer's rating" },
     winding: { flag: "WINDING_EXCESS_HEATING", badge: "Running hot", label: "Winding excess heating",
       title: "The winding is hotter than its load explains: possible restricted oil flow or winding fault" },
+    top_oil: { flag: "OIL_AGEING", badge: "Oil ageing", label: "Oil ageing",
+      title: "Radiator cleaning recovers less each time and the interval keeps shrinking: the oil itself is ageing" },
   };
   const FLAG_LABEL = Object.fromEntries(Object.values(TREND_FLAGS).map((f) => [f.flag, f.label]));
+  FLAG_LABEL.COOLING_DEGRADED = "Cooling degraded";
   const GROUP = {
     precision: { label: "Precision Measurement Maintenance", short: "Precision Measurement" },
     transformer: { label: "Transformer Maintenance", short: "Transformer" },

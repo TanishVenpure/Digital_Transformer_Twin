@@ -71,6 +71,7 @@ def timeline(transformer_id: str) -> dict[str, Any]:
         rows = db.timeline(connection, transformer_id)
         events = db.maintenance_events(connection, transformer_id)
         thermal = winding_analysis(connection, transformer_id)
+        cooling = db.top_oil_analysis(connection, transformer_id, live_service.thresholds)
     if not rows:
         raise HTTPException(404, f"No readings for {transformer_id}")
     frames = []
@@ -85,7 +86,8 @@ def timeline(transformer_id: str) -> dict[str, Any]:
         "hours_per_second": HOURS_PER_SECOND, "iots": list_iots(),
         "models": {name: spec.label for name, spec in models.models.items()}, "frames": frames,
         "events": events,
-        "analytics": {"oil_leak": oil_leak_analysis(rows), "load_growth": load_growth_analysis(rows), "winding": thermal},
+        "analytics": {"oil_leak": oil_leak_analysis(rows), "load_growth": load_growth_analysis(rows), "winding": thermal,
+                      "top_oil": cooling},
     }
 
 
@@ -119,6 +121,16 @@ def winding_endpoint(transformer_id: str) -> dict[str, Any]:
     if not result["expected"]:
         raise HTTPException(404, f"No readings for {transformer_id}")
     return {k: v for k, v in result.items() if k != "expected"}
+
+
+@app.get("/api/analytics/top-oil/{transformer_id}")
+def top_oil_endpoint(transformer_id: str) -> dict[str, Any]:
+    """Cooling health, cleaning cycles, oil ageing, forecasts and the winding cross-check (no hourly arrays)."""
+    with db.connect() as connection:
+        result = db.top_oil_analysis(connection, transformer_id, live_service.thresholds)
+    if not result["cycles"]:
+        raise HTTPException(404, f"No readings for {transformer_id}")
+    return {k: v for k, v in result.items() if k != "hourly"}
 
 
 @app.get("/api/analytics/load-growth/{transformer_id}")
