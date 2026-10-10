@@ -1,0 +1,13 @@
+**/.git
+**/.venv
+**/venv
+**/__pycache__
+**/*.pyc
+**/.pytest_cache
+twin_iot/data/maintenance
+app
+alembic
+data
+docs
+tests
+scripts

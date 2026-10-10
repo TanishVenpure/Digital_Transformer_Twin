@@ -1,0 +1,35 @@
+# One command: PostgreSQL + API + dashboard.
+#   docker compose up -d --build                                  -> http://localhost:8020/dashboard/
+#   docker compose exec api python scripts/simulate.py            (optional: 90 days of demo data)
+# Ports can be changed: TWIN_API_PORT=8080 TWIN_DB_PORT=5440 docker compose up -d
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: twin
+      POSTGRES_DB: twin_iot
+      POSTGRES_HOST_AUTH_METHOD: trust   # local demo only: no password
+    ports:
+      - "${TWIN_DB_PORT:-5434}:5432"     # same address as the non-Docker default
+    volumes:
+      - twin_pg:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U twin -d twin_iot"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  api:
+    build:
+      context: ..
+      dockerfile: twin_iot/Dockerfile
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      TWIN_DATABASE_URL: postgresql://twin@db:5432/twin_iot
+    ports:
+      - "${TWIN_API_PORT:-8020}:8020"
+
+volumes:
+  twin_pg:

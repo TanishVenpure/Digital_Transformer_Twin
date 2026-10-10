@@ -6,8 +6,70 @@ These outputs feed the future Health Engine and the dashboard health bars IOT1�
 
 The structure mirrors `Digital_Transformer_Twin/app` (Formula → FormulaRegistry →
 AlertEngine with thresholds from `config/thresholds.yaml`). `formulas/base.py` and
-`formulas/context.py` are copied unchanged. There is no database or API here, so the
-modules can be moved into the backend later.
+`formulas/context.py` are copied unchanged. On top of the IoTs it has a PostgreSQL store,
+a FastAPI server, a degradation simulator, trend analytics and the web dashboard
+(`../dashboard/`).
+
+## Quick start (any machine)
+
+Everything runs from this folder (`twin_iot/`). It starts with an empty database: load data
+by dropping a CSV on the dashboard or by running the simulator.
+
+### Option A: Docker (nothing else to install)
+
+> Not yet tested end to end; Option B is the verified route.
+
+```bash
+cd twin_iot
+docker compose up -d --build
+```
+
+Open <http://localhost:8020/dashboard/>. For 90 days of demo data:
+
+```bash
+docker compose exec api python scripts/simulate.py
+```
+
+Stop with `docker compose down` (add `-v` to delete the data too). If ports 8020 or 5434
+are taken, set other ones: `TWIN_API_PORT=8080 TWIN_DB_PORT=5440 docker compose up -d`.
+
+### Option B: Python + your own PostgreSQL
+
+Needs Python 3.11+ and PostgreSQL 13+ (the `initdb`, `pg_ctl`, `createdb` tools are in its
+`bin` folder).
+
+```bash
+cd twin_iot
+python -m venv .venv
+.venv/Scripts/activate            # Windows   (macOS / Linux: source .venv/bin/activate)
+pip install -r requirements.txt
+python -m pytest -q               # 70 tests, no database needed
+
+# a database: user "twin", database "twin_iot", port 5434, no password (local only)
+initdb -D twin_pg -U twin -A trust
+pg_ctl start -D twin_pg -o "-p 5434" -l twin_pg.log
+createdb -h localhost -p 5434 -U twin twin_iot
+
+python scripts/simulate.py        # optional: 90 days of demo data
+python -m uvicorn app.api.main:app --port 8020
+```
+
+Open <http://localhost:8020/dashboard/>.
+
+To use an existing PostgreSQL server instead, create a database and point the app at it
+(the default is `postgresql://twin@localhost:5434/twin_iot`):
+
+```bash
+export TWIN_DATABASE_URL=postgresql://USER:PASSWORD@HOST:PORT/DBNAME     # Windows PowerShell: $env:TWIN_DATABASE_URL="..."
+```
+
+### Loading your own data
+
+- **Dashboard:** drop a CSV on "Drop CSV data here" (it uses `POST /api/upload`). An upload
+  replaces the stored readings of the transformers in the file (send `replace=false` to append).
+- **Script:** `python scripts/run_csv.py my_data.csv` evaluates a CSV without the database.
+- Column names are listed under "Input columns" below; rename yours in `config/column_mapping.yaml`.
+- `data/examples/escalation_demo.csv` is a small example file.
 
 ## The seven IoTs
 
@@ -49,19 +111,8 @@ health bars, the Blender transformer model (`transformer.glb` from the FRONTEND 
 tank views, cutaway and explode/assemble), the maintenance sheet, and a time bar that plays
 hourly data at 1 day per second.
 
-```bash
-# 1. A local PostgreSQL database (any server works; set TWIN_DATABASE_URL to use another)
-initdb -D <data-dir> -U twin -A trust      # once
-pg_ctl start -D <data-dir> -o "-p 5434"
-createdb -h localhost -p 5434 -U twin twin_iot
-# default URL: postgresql://twin@localhost:5434/twin_iot
-
-# 2. Random hourly sample data (90 days) + maintenance sheet exports in data/maintenance/
-python scripts/simulate.py
-
-# 3. API + dashboard  ->  http://localhost:8020/dashboard/
-python -m uvicorn app.api.main:app --port 8020
-```
+How to start it: see "Quick start" at the top. The simulator writes the maintenance sheet
+exports to `data/maintenance/`.
 
 - **Validation:** every input of the 7 IoTs is range- and type-checked (`config/validation.yaml`).
 - **3D signalling:** when an IoT's threshold is met, FastAPI selects that IoT's view
@@ -80,4 +131,4 @@ python scripts/run_csv.py my_data.csv --json results.json  # full evaluations as
 python -m pytest -q
 ```
 
-Needs Python 3.11+, pydantic 2 and PyYAML.
+Needs Python 3.11+ and `pip install -r requirements.txt`.

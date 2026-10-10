@@ -1,0 +1,8 @@
+# Transformer twin IoT layer: API, dashboard server, simulator and tests (Python 3.11+)
+fastapi>=0.115,<1
+uvicorn[standard]>=0.30,<1
+pydantic>=2.9,<3
+PyYAML>=6,<7
+psycopg2-binary>=2.9,<3
+python-multipart>=0.0.18,<1
+pytest>=8,<10
