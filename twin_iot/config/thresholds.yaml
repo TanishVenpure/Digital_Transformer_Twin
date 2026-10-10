@@ -87,17 +87,22 @@ formulas:
         signal: WARNING
         message: "Top-oil temperature rise over ambient exceeds the permitted rise."
 
+  # Winding temperature indicator (WTI) protection: absolute hottest-phase winding temperature,
+  # CPRI transformer settings. 110.0 degC alarm -> WARNING, 120.0 degC trip -> CRITICAL
+  # (109.9 Normal, 110.0 Warning, 119.9 Warning, 120.0 Critical). Independent of the OTI rule above:
+  # the two are never averaged, the overall status is the worse of them.
+  # The winding rise over ambient is analytics only (details + app/analytics/winding.py), never the trip.
   winding_temperature:
     iot_slot: 7
-    operator: ">"
-    unit: K_rise_over_ambient
-    warning: 40.0              # EXAMPLE warning rise
-    critical: 45.0             # max winding rise (CPRI reference)
+    operator: ">="
+    unit: degC
+    warning: 110.0             # WTI alarm (CPRI)
+    critical: 120.0            # WTI trip (CPRI)
     lead_time_hours: 6.0       # EXAMPLE
     maintenance_type: TRANSFORMER_MAINTENANCE
-    warning_message: "Winding temperature rise is approaching the permitted rise."
-    critical_message: "Winding temperature rise exceeds the permitted rise."
-    predicted_message: "Winding temperature rise is predicted to exceed the permitted rise within the lead time."
+    warning_message: "Winding temperature (WTI) reached the alarm setting."
+    critical_message: "Winding temperature (WTI) reached the trip setting."
+    predicted_message: "Winding temperature (WTI) is predicted to reach the trip setting within the lead time."
 
   transformer_pressure_monitoring:
     iot_slot: 8

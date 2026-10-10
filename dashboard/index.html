@@ -503,9 +503,9 @@
 <script src="vendor/three/GLTFLoader.js"></script>
 <script src="vendor/three/OrbitControls.js"></script>
 <script src="vendor/three/RoomEnvironment.js"></script>
-<script src="metal.js?v=20261010-7"></script>
-<script src="twin3d.js?v=20261010-7"></script>
-<script src="metric-chart.js?v=20261010-7"></script>
+<script src="metal.js?v=20261011-1"></script>
+<script src="twin3d.js?v=20261011-1"></script>
+<script src="metric-chart.js?v=20261011-1"></script>
 <script>
 (() => {
   const API = "/api";
@@ -524,7 +524,7 @@
     4: { name: "Voltage", metric: "Supply deviation (external grid)", group: "transformer", fmt: (v) => ["±" + v.toFixed(1), "%"] },
     5: { name: "Oil Level", metric: "Conservator gauge", group: "transformer", fmt: (v) => [v.toFixed(1), "%"] },
     6: { name: "Top-Oil Temperature", metric: "Top-oil, absolute", group: "transformer", fmt: (v) => [v.toFixed(1), "°C"] },
-    7: { name: "Winding Temperature", metric: "Hottest phase rise over ambient", group: "transformer", fmt: (v) => [v.toFixed(1), "K"] },
+    7: { name: "Winding Temperature (WTI)", metric: "Hottest phase, absolute · alarm 110 / trip 120 °C", group: "transformer", fmt: (v) => [v.toFixed(1), "°C"] },
     8: { name: "Transformer Pressure", metric: "Measured oil pressure · unit unconfigured", group: "transformer", fmt: (v) => [v.toFixed(2), ""] },
   };
   // Trend flags from the backend's analytics (shown when the timeline response carries them).
@@ -704,8 +704,9 @@
       const badge = card.querySelector(".flag");
       badge.textContent = info.badge; badge.title = info.title;
     }
-    $("count-precision").textContent = counts.precision ? `${counts.precision} of 2 need attention` : "All within limits";
-    $("count-transformer").textContent = counts.transformer ? `${counts.transformer} of 5 need attention` : "All within limits";
+    const total = (g) => state.data.iots.filter((iot) => MONITORS[iot.slot].group === g).length;
+    $("count-precision").textContent = counts.precision ? `${counts.precision} of ${total("precision")} need attention` : "All within limits";
+    $("count-transformer").textContent = counts.transformer ? `${counts.transformer} of ${total("transformer")} need attention` : "All within limits";
     const overall = worst(frame.s);
     setStatusClass($("overall"), overall);
     $("overall").textContent = overall ? (overall === "NORMAL" ? "All monitors normal"

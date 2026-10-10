@@ -14,7 +14,8 @@
   const NS = 'http://www.w3.org/2000/svg';
   const RANGES = { '7d': 7 * 24, '30d': 30 * 24, all: Infinity };
   // Reference "as new" level per monitor slot, for the health % view.
-  const REFERENCE = { 1: 0, 2: 0, 3: 60, 4: 0, 5: 86, 6: 35, 7: 25 };
+  // 7 (WTI) is absolute degC: ~60 degC is a lightly loaded winding on a 30 degC day.
+  const REFERENCE = { 1: 0, 2: 0, 3: 60, 4: 0, 5: 86, 6: 35, 7: 60 };
 
   function el(tag, attrs, parent) {
     const e = document.createElementNS(NS, tag);
@@ -137,7 +138,8 @@
       const wd = st.data.analytics && st.data.analytics.winding;
       if (!wd || wd.slot !== s) return { isWinding: false };
       const reviews = wd.reviews.filter((r) => Date.parse(r.at) <= tEnd);
-      return { isWinding: true, expected: wd.expected.slice(start, end + 1),
+      // the WTI value is an absolute temperature, so draw the thermal model's expectation in degC too
+      return { isWinding: true, expected: (wd.expected_wti || wd.expected).slice(start, end + 1),
         thermalReview: reviews[reviews.length - 1] || null,
         thermalFlags: wd.flags.filter((f) => Date.parse(f.detected_at) <= tEnd) };
     }
@@ -212,7 +214,7 @@
       document.getElementById('legend-trend').hidden = !w.isLoad;
       document.getElementById('legend-expected').hidden = !(w.isWinding || w.isTopOil);
       document.getElementById('legend-expected-text').textContent = w.isTopOil
-        ? 'Expected from load + weather (thermal model)' : 'Expected at this load (thermal model)';
+        ? 'Expected from load + weather (thermal model)' : 'Expected WTI at this load (thermal model, analytics only)';
       document.querySelectorAll('.legend-topoil').forEach((x) => x.hidden = !w.isTopOil);
       if (w.isTopOil) {
         const flag = w.toFlags[w.toFlags.length - 1], check = w.toChecks[w.toChecks.length - 1];
@@ -239,7 +241,7 @@
         if (flag) {
           el.innerHTML = `<b>Winding excess heating</b> flagged ${flag.detected_at.slice(0, 10)}: ${flag.message.replace(/^Winding running hotter than its load explains: /, '')}`;
         } else if (r) {
-          el.innerHTML = `<b>Weekly thermal review ${r.at.slice(0, 10)}:</b> measured vs thermal model ${r.excess_by_week.map((x) => (x >= 0 ? '+' : '') + x.toFixed(1)).join(' → ')} K · `
+          el.innerHTML = `<b>Weekly thermal review ${r.at.slice(0, 10)}</b> (analytics, not the WTI trip): rise over ambient measured vs thermal model ${r.excess_by_week.map((x) => (x >= 0 ? '+' : '') + x.toFixed(1)).join(' → ')} K · `
             + `insulation ageing ${r.ageing_days_week.toFixed(2)} equivalent days this week (${r.ageing_rate.toFixed(3)}× design rate) · life used so far ${r.loss_of_life_days.toFixed(2)} days`;
         } else {
           el.innerHTML = '<b>Weekly thermal review:</b> needs at least one full week of data';

@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 
 from app.services.processing_service import ProcessingService
-from app.simulation.degradation_source import MONITORS, generate
+from app.simulation.degradation_source import MONITORS, WtiEpisode, generate
 
 START = datetime(2026, 7, 1, tzinfo=timezone.utc)
 
@@ -17,7 +17,8 @@ def test_every_monitor_degrades_to_critical_and_is_repaired():
             else:
                 seen[e.iot_slot].add(e.status)
     assert all(repairs[name] for name in MONITORS if name not in ("current", "voltage", "winding")), repairs
-    assert repairs["winding"] == []   # cooling-duct fault needs an internal inspection; not repaired in the window
+    # the duct fault is not repaired in the window; the only winding event ends the WTI overload episode
+    assert repairs["winding"] == [WtiEpisode().end_hour]
     assert repairs["current"] == []   # load follows demand; it is managed, never "repaired"
     assert repairs["voltage"] == []   # supply voltage is external; nothing to repair
     for slot, statuses in seen.items():
@@ -45,3 +46,15 @@ def test_top_oil_cleaning_intervals_shorten_and_oil_gauge_follows_temperature():
     hot = max(day, key=lambda d: d["top_oil_temperature"])
     cold = min(day, key=lambda d: d["top_oil_temperature"])
     assert hot["oil_level"] > cold["oil_level"]
+
+
+def test_wti_episode_crosses_alarm_then_trip_and_ends():
+    readings, _ = generate(start=START, days=90, seed=7, invalid_rate=0)
+    ep = WtiEpisode()
+    wti = [max(d[f"winding_temperature_{p}"] for p in "ryb") for _, d in readings]
+    over_alarm = [h for h, t in enumerate(wti) if t >= 110]
+    over_trip = [h for h, t in enumerate(wti) if t >= 120]
+    assert over_trip and over_alarm[0] < over_trip[0]               # alarm first, then trip
+    assert all(ep.active(h) for h in over_alarm)                     # only during the episode
+    assert max(wti) < 140                                            # CPRI-plausible emergency peak
+    assert wti[ep.end_hour + 2] < 110                                # back below the alarm after it ends

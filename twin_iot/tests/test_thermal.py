@@ -27,29 +27,82 @@ def test_top_oil_trend_predicts_trip(run):
     assert evaluation.signals == ["WARNING", "PREDICTED_MAINTENANCE"]
 
 
-def winding(r, y, b, ambient):
-    return {**phases("winding_temperature", r, y, b), "ambient_temperature": ambient}
+def winding(r, y, b, ambient=None):
+    data = phases("winding_temperature", r, y, b)
+    if ambient is not None:
+        data["ambient_temperature"] = ambient
+    return data
 
 
+TRIP = ["WARNING", "CRITICAL", "MAINTENANCE_REQUIRED"]
+
+
+# WTI protection: absolute hottest-phase temperature against the CPRI alarm (110) and trip (120) settings.
 @pytest.mark.parametrize("hottest,expected", [
-    (60, ["NORMAL"]), (71, ["WARNING"]), (75, ["WARNING"]),     # 45 K exactly is not over the limit
-    (76, ["WARNING", "CRITICAL", "MAINTENANCE_REQUIRED"]),
+    (109.9, ["NORMAL"]), (110.0, ["WARNING"]), (119.9, ["WARNING"]), (120.0, TRIP),
 ])
-def test_winding_rise_uses_hottest_phase(run, hottest, expected):
-    evaluation = run("winding_temperature", winding(50, hottest, 55, 30))
-    assert evaluation.value == hottest - 30
+def test_wti_alarm_and_trip_boundaries(run, hottest, expected):
+    evaluation = run("winding_temperature", winding(80, hottest, 90, 30))
+    assert evaluation.value == hottest
+    assert evaluation.unit == "degC"
     assert evaluation.details["hottest_phase"] == "Y"
     assert evaluation.signals == expected
 
 
-def test_winding_requires_ambient(run):
-    evaluation = run("winding_temperature", phases("winding_temperature", 60, 60, 60))
+def test_wti_status_ignores_the_rise_over_ambient(run):
+    # the same 100 degC winding is Normal whatever the ambient: a 75 K rise (old 45 K limit) no longer trips
+    for ambient in (0, 25, 55, None):
+        evaluation = run("winding_temperature", winding(100, 100, 100, ambient))
+        assert evaluation.signals == ["NORMAL"], ambient
+    hot = run("winding_temperature", winding(121, 120, 120, 60))
+    assert hot.details["winding_rise"] == 61
+    assert hot.signals == TRIP
+
+
+def test_wti_without_ambient_still_protects(run):
+    evaluation = run("winding_temperature", winding(125, 120, 118))
+    assert evaluation.evaluation_status != EvaluationStatus.SKIPPED
+    assert evaluation.details["winding_rise"] is None
+    assert evaluation.signals == TRIP
+
+
+@pytest.mark.parametrize("data", [
+    {"winding_temperature_r": 130, "winding_temperature_y": 130},          # one phase missing
+    {},                                                                     # no WTI data at all
+])
+def test_missing_wti_data_is_no_data_never_a_trip(run, data):
+    evaluation = run("winding_temperature", {**data, "ambient_temperature": 30})
     assert evaluation.evaluation_status == EvaluationStatus.SKIPPED
-    assert evaluation.missing_features == ["ambient_temperature"]
+    assert evaluation.status is None and evaluation.alerts == []
 
 
-def test_winding_trend_predicts_breach(run):
-    # rise 30 -> 35 K in 1 h; 10 K left = 2 h.
-    evaluation = run("winding_temperature", winding(65, 60, 60, 30), winding(60, 60, 60, 30))
-    assert evaluation.time_to_critical_hours == pytest.approx(2)
-    assert evaluation.signals == ["PREDICTED_MAINTENANCE"]
+def test_invalid_wti_reading_is_dropped_not_a_trip():
+    from app.services.processing_service import ProcessingService
+    from tests.conftest import NOW
+    processed = ProcessingService().process("T1", NOW, {**winding(99999, "ERR", 125), "ambient_temperature": 30})
+    e = processed.evaluations["winding_temperature"]
+    assert e.evaluation_status == "SKIPPED" and not e.alerts
+    assert {i.feature for i in processed.issues} >= {"winding_temperature_r", "winding_temperature_y"}
+
+
+def test_wti_trend_predicts_trip(run):
+    # 104 -> 112 degC in 1 h: 8 K to the 120 degC trip = 1 h, within the 6 h lead time.
+    evaluation = run("winding_temperature", winding(112, 100, 100, 30), winding(104, 100, 100, 30))
+    assert evaluation.time_to_critical_hours == pytest.approx(1)
+    assert evaluation.signals == ["WARNING", "PREDICTED_MAINTENANCE"]
+
+
+@pytest.mark.parametrize("oil,wti,oti_status,wti_status", [
+    (106, 90, "CRITICAL", "NORMAL"),     # OTI trips on its own setting; WTI stays Normal
+    (70, 121, "NORMAL", "CRITICAL"),     # WTI trips on its own setting; OTI stays Normal
+    (96, 111, "WARNING", "WARNING"),
+])
+def test_oti_and_wti_are_independent(oil, wti, oti_status, wti_status):
+    from app.services.processing_service import ProcessingService
+    from tests.conftest import NOW
+    data = {"top_oil_temperature": oil, "ambient_temperature": 60, **winding(wti, wti, wti)}
+    e = ProcessingService().process("T1", NOW, data).evaluations
+    assert e["top_oil_temperature"].status == oti_status
+    assert e["winding_temperature"].status == wti_status
+    # never averaged: each keeps its own measured value
+    assert e["top_oil_temperature"].value == oil and e["winding_temperature"].value == wti

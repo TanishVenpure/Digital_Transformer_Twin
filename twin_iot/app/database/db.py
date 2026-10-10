@@ -273,10 +273,11 @@ def oil_series(connection, transformer_id: str, slot: int) -> list[tuple]:
 
 def winding_inputs(connection, transformer_id: str, winding_slot: int, load_slot: int) -> list[tuple]:
     """(timestamp, winding hot-spot rise K, loading % of rated, ambient degC, measured top-oil rise K)
-    for every stored hour."""
+    for every stored hour. The rise comes from the WTI evaluation's details (analytics only; the WTI
+    status itself is on the absolute temperature)."""
     with connection.cursor() as cursor:
         cursor.execute("""
-            SELECT r.ts, ew.value, el.value, (r.clean_data->>'ambient_temperature')::float,
+            SELECT r.ts, (ew.details->>'winding_rise')::float, el.value, (r.clean_data->>'ambient_temperature')::float,
                    (r.clean_data->>'top_oil_temperature')::float - (r.clean_data->>'ambient_temperature')::float
             FROM readings r
             LEFT JOIN iot_evaluations ew ON ew.reading_id = r.id AND ew.iot_slot = %s
@@ -295,7 +296,7 @@ def top_oil_inputs(connection, transformer_id: str, load_slot: int, winding_slot
                    el.value,
                    el.value * sqrt((power({phase('r')}, 2) + power({phase('y')}, 2) + power({phase('b')}, 2)) / 3)
                      / NULLIF(greatest({phase('r')}, {phase('y')}, {phase('b')}), 0),
-                   (r.clean_data->>'oil_level')::float, ew.value
+                   (r.clean_data->>'oil_level')::float, (ew.details->>'winding_rise')::float
             FROM readings r
             LEFT JOIN iot_evaluations el ON el.reading_id = r.id AND el.iot_slot = %s
             LEFT JOIN iot_evaluations ew ON ew.reading_id = r.id AND ew.iot_slot = %s

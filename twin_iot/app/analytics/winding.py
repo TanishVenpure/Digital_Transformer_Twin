@@ -88,7 +88,8 @@ def analyse(rows: list[tuple], config: ThermalConfig | None = None) -> dict[str,
     rise K]) in time order. With the top-oil rise, expected = measured top-oil rise + model gradient."""
     from app.analytics.top_oil import expected_components
     config = config or ThermalConfig()
-    out: dict[str, Any] = {"expected": [], "weeks": [], "reviews": [], "flags": [], "loss_of_life_days": 0.0}
+    out: dict[str, Any] = {"expected": [], "expected_wti": [], "weeks": [], "reviews": [], "flags": [],
+                           "loss_of_life_days": 0.0}
     if not rows:
         return out
     expected = expected_rises([r[2] for r in rows], config)
@@ -97,6 +98,9 @@ def analyse(rows: list[tuple], config: ThermalConfig | None = None) -> dict[str,
         expected = [round(r[4] + c[1], 2) if (c is not None and len(r) > 4 and r[4] is not None) else e
                     for r, c, e in zip(rows, comps, expected)]
     out["expected"] = expected
+    # the same expectation as an absolute winding temperature, to draw against the WTI value
+    out["expected_wti"] = [round(r[3] + e, 2) if (e is not None and r[3] is not None) else None
+                           for r, e in zip(rows, expected)]
 
     start = rows[0][0].replace(hour=0, minute=0, second=0, microsecond=0)
     weeks: list[dict[str, Any]] = []

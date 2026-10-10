@@ -247,6 +247,27 @@ class GridVoltage:
         return daily + self.drift + extra
 
 
+@dataclass(frozen=True)
+class WtiEpisode:
+    """One emergency-overload episode that takes the WTI past its alarm (110 degC) and trip (120 degC):
+    on a hot afternoon a neighbouring feeder is switched onto this transformer (load ~1.4 pu) while a
+    radiator valve has been left part-closed after maintenance (top-oil rise x1.25). The overload is
+    shed and the valve reopened after `hours`, recorded as a winding maintenance event."""
+    day: int = 60
+    start_hour: int = 10          # local hour of day the overload starts
+    hours: int = 10
+    loading: float = 140.0        # % of rated current during the episode
+    cooling_factor: float = 1.25  # extra top-oil rise multiplier (valve part-closed)
+
+    def active(self, hour: int) -> bool:
+        start = self.day * 24 + self.start_hour
+        return start <= hour < start + self.hours
+
+    @property
+    def end_hour(self) -> int:
+        return self.day * 24 + self.start_hour + self.hours
+
+
 def phase_loadings(loading: float) -> list[float]:
     """Per-phase loading as a fraction of rated (R, Y, B): small, fixed imbalance."""
     return [loading / 100 * (1 - 0.02 * i) for i in range(3)]
@@ -314,6 +335,7 @@ MONITORS = ("current_sensor", "voltage_sensor", "current", "voltage", "oil", "to
 
 def generate(
     *, start: datetime, days: int, seed: int | None = None, invalid_rate: float = 0.003,
+    wti_episode: WtiEpisode | None = WtiEpisode(),
 ) -> tuple[Iterator[tuple[datetime, dict[str, Any]]], dict[str, list[int]]]:
     """Returns (readings iterator, repairs) - repairs fill in as the iterator is consumed."""
     rng = random.Random(seed)
@@ -322,7 +344,9 @@ def generate(
     repairs = {name: state.repairs for name, state in states.items()}
     repairs["current"] = []   # load is managed, not repaired
     repairs["voltage"] = []   # supply voltage is external, nothing to repair
-    repairs["winding"] = []   # duct blockage needs an internal inspection; not repaired in the window
+    # The duct blockage needs an internal inspection and is not repaired in the window; the only winding
+    # maintenance event is the end of the WTI overload episode (load shed, radiator valve reopened).
+    repairs["winding"] = []
     winding = WindingThermal()
     cooling = CoolingSystem(random.Random((seed or 0) + 3041))
     repairs["top_oil"] = cooling.cleanings   # radiator cleanings
@@ -334,8 +358,15 @@ def generate(
         for hour in range(days * 24):
             levels = {name: state.step(hour) for name, state in states.items()}
             loading = load.loading(hour)
+            episode = wti_episode is not None and wti_episode.active(hour)
+            if episode:
+                loading = wti_episode.loading + rng.gauss(0, 1.0)
             gauge = 86 - 66.5 * levels["oil"] + OIL_GAUGE_PER_K * (top_oil - OIL_GAUGE_REFERENCE_C)
             factor = cooling.step(hour, oil_level=gauge)
+            if episode:
+                factor *= wti_episode.cooling_factor
+            if wti_episode is not None and hour == wti_episode.end_hour and wti_episode.end_hour < days * 24:
+                repairs["winding"].append(hour)
             rises = winding.step(hour, phase_loadings(loading), cooling=factor)
             data = reading_from_levels(levels, hour, rng, loading=loading, grid_deviation=grid.deviation(hour),
                                        winding_rises=rises, top_oil_rise=winding.oil_rise)

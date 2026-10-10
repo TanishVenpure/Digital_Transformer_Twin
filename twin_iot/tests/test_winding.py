@@ -42,3 +42,21 @@ def test_growing_excess_is_flagged():
 def test_loss_of_life_accumulates_from_hot_spot():
     result = analyse(rows(7, loading=100.0, ambient=98.0 - 45.0), CONFIG)   # hot-spot = 98 degC -> rate 1
     assert result["loss_of_life_days"] == pytest.approx(7, rel=0.02)
+
+
+def test_expected_wti_is_ambient_plus_expected_rise():
+    data = rows(8, ambient=31.5)
+    result = analyse(data, CONFIG)
+    assert len(result["expected_wti"]) == len(data)
+    assert all(w == pytest.approx(e + 31.5, abs=0.01) for w, e in zip(result["expected_wti"], result["expected"]))
+
+
+def test_rise_analytics_use_the_wti_details():
+    """The WTI evaluation keeps the rise over ambient in its details for these analytics."""
+    from app.services.processing_service import ProcessingService
+    e = ProcessingService().process("T1", START, {"winding_temperature_r": 75, "winding_temperature_y": 80,
+                                                   "winding_temperature_b": 78, "ambient_temperature": 30})
+    w = e.evaluations["winding_temperature"]
+    assert w.value == 80 and w.details["winding_rise"] == 50
+    result = analyse([(START + timedelta(hours=h), w.details["winding_rise"], 80.0, 30.0) for h in range(24)], CONFIG)
+    assert result["loss_of_life_days"] > 0 and len(result["expected"]) == 24

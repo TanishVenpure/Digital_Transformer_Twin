@@ -125,7 +125,7 @@ def winding_endpoint(transformer_id: str) -> dict[str, Any]:
         result = winding_analysis(connection, transformer_id)
     if not result["expected"]:
         raise HTTPException(404, f"No readings for {transformer_id}")
-    return {k: v for k, v in result.items() if k != "expected"}
+    return {k: v for k, v in result.items() if k not in ("expected", "expected_wti")}
 
 
 @app.get("/api/analytics/top-oil/{transformer_id}")
