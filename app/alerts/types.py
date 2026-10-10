@@ -1,6 +1,0 @@
-from enum import Enum
-
-
-class MaintenanceType(str, Enum):
-    SYSTEM_MAINTENANCE = "SYSTEM_MAINTENANCE"
-    TRANSFORMER_MAINTENANCE = "TRANSFORMER_MAINTENANCE"

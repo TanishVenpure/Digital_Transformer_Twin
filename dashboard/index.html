@@ -168,10 +168,10 @@
     padding: 8px 12px; font-size: 11px; color: var(--muted);
   }
   .model-bar button { padding: 3px 10px; font-size: 11px; }
-  .model-bar button[aria-pressed="true"] { background: color-mix(in srgb, var(--accent) 22%, transparent); border-color: color-mix(in srgb, var(--accent) 60%, transparent); }
-  /* tick rate: seconds of playback per hour of data */
+  /* tick rate: seconds of playback per hour of data (base for the speed button) */
   .tick { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); font-size: 12px; }
   .tick input { width: 64px; padding: 5px 8px; border-radius: 8px; border: 1px solid var(--border); background: var(--panel-2); color: var(--text); font: inherit; font-variant-numeric: tabular-nums; }
+  .model-bar button[aria-pressed="true"] { background: color-mix(in srgb, var(--accent) 22%, transparent); border-color: color-mix(in srgb, var(--accent) 60%, transparent); }
   .model-bar input[type=range] { flex: 1; min-width: 0; accent-color: var(--accent); }
   .model-bar output { color: var(--text); font-variant-numeric: tabular-nums; min-width: 4ch; text-align: right; }
   .model-bar label.check { display: flex; align-items: center; gap: 4px; cursor: pointer; }
@@ -425,8 +425,9 @@
           <button id="back" title="Back one day" disabled>&#9198;</button>
           <button id="play" title="Play / pause" disabled>&#9654;</button>
           <button id="fwd" title="Forward one day" disabled>&#9197;</button>
-          <label class="tick" for="tick" title="Seconds of playback for each hour of data">1 hour every
+          <label class="tick" for="tick" title="Seconds of playback for each hour of data at 1×">1 hour every
             <input type="number" id="tick" min="0.01" max="60" step="0.5" value="2" disabled> s</label>
+          <button id="speed" title="Fast-forward / slow down (multiplies the tick rate)" disabled>1×</button>
           <span class="time" id="time">--:-- / --:--</span>
         </div>
         <div class="track" id="track"><canvas id="strip"></canvas><span class="knob" id="knob"></span></div>
@@ -502,14 +503,16 @@
 <script src="vendor/three/GLTFLoader.js"></script>
 <script src="vendor/three/OrbitControls.js"></script>
 <script src="vendor/three/RoomEnvironment.js"></script>
-<script src="metal.js?v=20261010-5"></script>
-<script src="twin3d.js?v=20261010-5"></script>
-<script src="metric-chart.js?v=20261010-5"></script>
+<script src="metal.js?v=20261010-7"></script>
+<script src="twin3d.js?v=20261010-7"></script>
+<script src="metric-chart.js?v=20261010-7"></script>
 <script>
 (() => {
   const API = "/api";
-  // Tick rate: seconds of playback per hour of data (default 2 s, so 90 days take 72 minutes).
+  // Playback: 1x = one hour of data every state.tick seconds (default 2 s, so 90 days take 72 minutes).
+  // The tick box sets that base rate; the speed button fast-forwards or slows down from it, as on main.
   const DEFAULT_TICK_S = 2;
+  const SPEEDS = [1, 2, 4, 0.5];
   const LABEL = { NORMAL: "Normal", WARNING: "Warning", PREDICTED_MAINTENANCE: "Predicted", MAINTENANCE_REQUIRED: "Maintenance", CRITICAL: "Critical" };
   const RANK = { NORMAL: 0, WARNING: 1, PREDICTED_MAINTENANCE: 2, MAINTENANCE_REQUIRED: 3, CRITICAL: 4 };
   const COLOR = { NORMAL: "#3fb950", WARNING: "#d29922", PREDICTED_MAINTENANCE: "#a371f7", MAINTENANCE_REQUIRED: "#f0883e", CRITICAL: "#f85149" };
@@ -564,7 +567,7 @@
       })
     : { setStatuses() {}, focus() {}, resetView() {}, toggleSpin() { return false; }, setMode() {}, setOil() {}, setLabels() {}, explode() {}, t: 0 };
   let chart = null;  // per-monitor graph, created once the data is loaded
-  const state = { data: null, sheet: [], filter: "all", pos: 0, playing: false, frame: -1, last: 0, tick: DEFAULT_TICK_S, model: null, painted: -1, signalBusy: false, signalPending: null };
+  const state = { data: null, sheet: [], filter: "all", pos: 0, playing: false, speed: 0, tick: DEFAULT_TICK_S, frame: -1, last: 0, model: null, painted: -1, signalBusy: false, signalPending: null };
 
   const fmtTime = (iso) => { const d = new Date(iso); return d.toISOString().slice(0, 16).replace("T", " "); };
   const fmtDay = (iso) => new Date(iso).toLocaleDateString(undefined, { day: "numeric", month: "short", timeZone: "UTC" });
@@ -626,7 +629,7 @@
     $("status").textContent = `630 kVA · 11 / 0.433 kV · Transformer ${timeline.transformer_id} · ${n} hourly readings · ${fmtDay(timeline.start)} – ${fmtDay(timeline.end)}`;
     const ticks = [0, .25, .5, .75, 1].map((f) => fmtDay(timeline.frames[Math.round(f * (n - 1))].t));
     $("ticks").innerHTML = ticks.map((t) => `<span>${t}</span>`).join("");
-    ["back", "play", "fwd", "tick"].forEach((id) => ($(id).disabled = false));
+    ["back", "play", "fwd", "tick", "speed"].forEach((id) => ($(id).disabled = false));
     const start = /t=(\d+)/.exec(location.hash);  // e.g. #t=960 opens at hour 960
     state.pos = start ? Math.min(n - 1, Number(start[1])) : 0;
     drawStrip();
@@ -771,7 +774,7 @@
     if (state.data) renderSheet(state.data.frames[state.frame].t);
   }));
 
-  // ---------- playback: one hourly frame every state.tick seconds ----------
+  // ---------- playback: one hourly frame every state.tick seconds at 1x ----------
   // Wall-clock based, so speed stays exact even if the browser throttles the timer.
   function tick() {
     if (!state.data || !Number.isFinite(state.pos)) return setPlaying(false);
@@ -779,7 +782,7 @@
     const dt = (now - state.last) / 1000;
     state.last = now;
     const max = state.data.frames.length - 1;
-    state.pos = Math.min(max, state.pos + dt / state.tick);
+    state.pos = Math.min(max, state.pos + (dt / state.tick) * SPEEDS[state.speed]);
     render();
     if (state.pos >= max) setPlaying(false);
   }
@@ -843,11 +846,17 @@
   $("play").onclick = () => setPlaying(!state.playing);
   $("back").onclick = () => seek(Math.floor(state.pos) - 24);
   $("fwd").onclick = () => seek(Math.floor(state.pos) + 24);
+  const showRate = () => {
+    const k = SPEEDS[state.speed], secs = +(state.tick / k).toPrecision(3);
+    $("speed").textContent = `${k}×`;
+    $("rate").textContent = `1 hour every ${secs} s` + (k === 1 ? "" : ` (${state.tick} s at ${k}×)`);
+  };
+  $("speed").onclick = () => { state.speed = (state.speed + 1) % SPEEDS.length; showRate(); };
   $("tick").addEventListener("change", (e) => {
     const v = Number(e.target.value);
     state.tick = Number.isFinite(v) && v > 0 ? Math.min(60, Math.max(0.01, v)) : DEFAULT_TICK_S;
     e.target.value = state.tick;
-    $("rate").textContent = `1 hour every ${state.tick} s`;
+    showRate();
   });
 
   const track = $("track");
