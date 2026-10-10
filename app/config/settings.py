@@ -1,7 +1,8 @@
 from functools import lru_cache
 from pathlib import Path
+from typing import Literal
 
-from pydantic import SecretStr, field_validator
+from pydantic import Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from sqlalchemy.engine import make_url
 
@@ -18,6 +19,19 @@ class Settings(BaseSettings):
     api_v1_prefix: str = "/api/v1"
     database_url: SecretStr | None = None
     debug: bool = False
+    agent_credentials: str = ""
+    # Chat explanations. "none" keeps answers deterministic; "gemini" sends the question,
+    # risk assessment and maintenance evidence to Google Gemini (explicit opt-in).
+    llm_provider: Literal["none", "gemini"] = "none"
+    gemini_api_key: SecretStr | None = None  # env GEMINI_API_KEY; never logged
+    gemini_model: str = "gemini-2.5-flash"
+    # Also sent as the server deadline (X-Server-Timeout); Google returns 504
+    # DEADLINE_EXCEEDED when generation exceeds it. 30 s: successful live calls took
+    # about 10-11 s, while two calls hit a 20 s deadline. One attempt, no retries.
+    gemini_timeout_seconds: float = Field(default=30.0, gt=0, le=120)
+    # Thinking effort for Gemini 3.x models; "low" is Google's latency recommendation
+    # for retrieval-style tasks. "default" sends nothing and uses the model default.
+    gemini_thinking_level: Literal["default", "low", "medium", "high"] = "low"
 
     @field_validator("database_url")
     @classmethod

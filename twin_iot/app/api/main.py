@@ -2,6 +2,7 @@
 
 Run: python -m uvicorn app.api.main:app --port 8000
 """
+import csv
 import os
 import tempfile
 from collections import Counter
@@ -9,12 +10,17 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import Depends, FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import PlainTextResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, field_validator
+from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from app.alerts.configuration import PROJECT_ROOT
+from app.api.security import (
+    MAX_READING_FIELDS, MAX_UPLOAD_BYTES, allowed_hosts, authorize_transformer, check_not_future,
+    check_transformer_id, require_write_access,
+)
 from app.database import db
 from app.formulas.registry import formula_registry
 from app.maintenance.sheet import SHEET_FIELDS, load_actions
@@ -27,6 +33,8 @@ DASHBOARD_DIR = Path(os.environ.get("TWIN_DASHBOARD_DIR", PROJECT_ROOT.parent / 
 HOURS_PER_SECOND = 24  # timeline tick: one day of hourly data per second at 1x
 
 app = FastAPI(title="Transformer Twin IoT API", version="0.1.0")
+# Rejects DNS-rebinding requests whose Host is not this machine (TWIN_ALLOWED_HOSTS overrides).
+app.add_middleware(TrustedHostMiddleware, allowed_hosts=allowed_hosts())
 live_service = ProcessingService()
 models = load_models()
 bridge = BlenderBridge(models)
@@ -36,6 +44,7 @@ actions = load_actions()
 @app.on_event("startup")
 def startup() -> None:
     with db.connect() as connection:
+        db.refuse_managed_database(connection)
         db.create_schema(connection)
     bridge.load_base_model()
 
@@ -101,12 +110,19 @@ def alerts(transformer_id: str, limit: int = 50) -> list[dict]:
 class ReadingIn(BaseModel):
     transformer_id: str
     timestamp: datetime
-    data: dict[str, Any]
+    data: dict[str, Any] = Field(max_length=MAX_READING_FIELDS)
+
+    _transformer = field_validator("transformer_id")(check_transformer_id)
+    _timestamp = field_validator("timestamp")(check_not_future)
 
 
 @app.post("/api/readings")
-def ingest(reading: ReadingIn) -> dict[str, Any]:
-    """Live path: validate -> evaluate -> store -> signal the 3D model if thresholds are met."""
+def ingest(reading: ReadingIn, authorized: set[str] = Depends(require_write_access)) -> dict[str, Any]:
+    """Live path: validate -> evaluate -> store -> signal the 3D model if thresholds are met.
+
+    Requires X-Twin-API-Key authorized for the reading's transformer.
+    """
+    authorize_transformer(reading.transformer_id, authorized)
     processed = live_service.process(reading.transformer_id, reading.timestamp, reading.data)
     selection = select_model(processed.evaluations, models)
     with db.connect() as connection:
@@ -123,22 +139,55 @@ def ingest(reading: ReadingIn) -> dict[str, Any]:
     }
 
 
+def _checked_rows(readings: list[tuple[str, datetime, dict[str, Any]]], authorized: set[str]) -> list:
+    """Validate and authorize every row before anything is deleted or stored."""
+    checked = []
+    for transformer, timestamp, data in readings:
+        try:
+            transformer = check_transformer_id(transformer)
+            check_not_future(timestamp)
+        except ValueError as exc:
+            raise HTTPException(400, f"Invalid CSV row: {exc}") from None
+        if len(data) > MAX_READING_FIELDS:
+            raise HTTPException(400, f"Invalid CSV row: more than {MAX_READING_FIELDS} columns")
+        authorize_transformer(transformer, authorized)
+        checked.append((transformer, timestamp, data))
+    return checked
+
+
 @app.post("/api/upload")
-async def upload(file: UploadFile = File(...), transformer_id: str = Form("T1"), replace: bool = Form(True)) -> dict[str, Any]:
-    """CSV drop zone: every row is validated and evaluated exactly like live readings."""
+async def upload(
+    file: UploadFile = File(...), transformer_id: str = Form("T1"), replace: bool = Form(True),
+    authorized: set[str] = Depends(require_write_access),
+) -> dict[str, Any]:
+    """CSV drop zone: every row is validated and evaluated exactly like live readings.
+
+    Requires X-Twin-API-Key authorized for every transformer named in the file; with
+    replace=true those transformers' stored readings are deleted first.
+    """
     if not (file.filename or "").lower().endswith(".csv"):
         raise HTTPException(400, "Only .csv files are accepted")
-    content = await file.read()
+    try:
+        default_transformer = check_transformer_id(transformer_id)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from None
+    content = await file.read(MAX_UPLOAD_BYTES + 1)
+    if len(content) > MAX_UPLOAD_BYTES:
+        raise HTTPException(413, f"CSV exceeds {MAX_UPLOAD_BYTES} bytes")
     with tempfile.NamedTemporaryFile("wb", suffix=".csv", delete=False) as handle:
         handle.write(content)
         path = Path(handle.name)
     try:
         try:
-            readings = sorted(read_csv(path, default_transformer=transformer_id), key=lambda r: (r[0], r[1]))
-        except (KeyError, ValueError) as exc:
-            raise HTTPException(400, f"Could not read CSV (needs a 'timestamp' column in ISO format): {exc}")
+            readings = sorted(read_csv(path, default_transformer=default_transformer), key=lambda r: (r[0], r[1]))
+        except (KeyError, ValueError, TypeError, AttributeError, csv.Error):
+            # UnicodeDecodeError is a ValueError. Do not echo uploaded content.
+            raise HTTPException(
+                400, "Could not read CSV (needs UTF-8, a header row and an ISO 'timestamp' column)"
+            ) from None
     finally:
         path.unlink(missing_ok=True)
+    readings = _checked_rows(readings, authorized)
     service, issues, stored, rejected = ProcessingService(), Counter(), 0, 0
     with db.connect() as connection:
         if replace:
@@ -199,15 +248,18 @@ def twin3d_state(calls: int = 20) -> dict[str, Any]:
 
 class SignalIn(BaseModel):
     reading_id: int
-    source: str = "timeline"
+    source: str = Field(default="timeline", min_length=1, max_length=32, pattern=r"^[a-z_]+$")
 
 
 @app.post("/api/twin3d/signal")
-def twin3d_signal(signal: SignalIn) -> dict[str, Any]:
-    """Timeline playback: re-select the model for a stored hour and switch only if it changed."""
+def twin3d_signal(signal: SignalIn, authorized: set[str] = Depends(require_write_access)) -> dict[str, Any]:
+    """Timeline playback: re-select the model for a stored hour and switch only if it changed.
+
+    Requires X-Twin-API-Key; readings of other transformers are reported as not found.
+    """
     with db.connect() as connection:
         detail = db.reading_detail(connection, signal.reading_id)
-    if detail is None:
+    if detail is None or detail["transformer_id"] not in authorized:
         raise HTTPException(404, "Reading not found")
     from app.alerts.engine import IoTEvaluation  # local: only needed to rebuild statuses
     evaluations = [

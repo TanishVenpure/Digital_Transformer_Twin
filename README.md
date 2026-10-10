@@ -268,7 +268,10 @@ PostgreSQL DDL compilation, Alembic setup, and explicit placeholders.
 The PostgreSQL integration test is skipped unless TEST_DATABASE_URL is set.
 It creates a uniquely named temporary schema with the test role, exercises
 storage, then drops only that schema. Use an isolated test database and a role
-allowed to create/drop schemas:
+allowed to create/drop schemas. The tests fail before connecting unless the
+database name ends in `_test` and differs from the `DATABASE_URL` application
+database. API calls in these tests use a random per-run key scoped only to the
+`integration` fixture transformer; they never read `AGENT_CREDENTIALS` from `.env`.
 
 ```powershell
 # Set your own credentials; do not copy placeholder credentials literally.
@@ -417,6 +420,176 @@ The friend building the agent needs only these HTTP endpoints:
 | Acknowledge an alert, when authorized by the user | PATCH /api/v1/alerts/{alert_id}/acknowledge |
 | Resolve an alert, when authorized by the user | PATCH /api/v1/alerts/{alert_id}/resolve |
 
+The agent routes (`POST /api/v1/agent/events` and `POST /api/v1/agent/chat`) require
+the `X-Agent-API-Key` header. Configure `AGENT_CREDENTIALS` as semicolon-separated
+`transformer_id:secret` entries. Each credential is authorized only for its
+server-side transformer mapping; the request `transformer_id` is not itself a
+credential. Missing configuration fails closed with 503, invalid credentials
+return 401, and out-of-scope transformer IDs return 403. Do not place secrets in
+source control or client-visible URLs.
+
+Data ingestion routes also require `X-Agent-API-Key`; readings and batches must
+use a transformer ID authorized by that credential. CSV upload preview requires
+the key even though the upload does not yet persist data. This protects local and
+deployed ingestion from unauthenticated callers, but a shared API key remains a
+coarse-grained control until device or tenant identity is added.
+
+Write permissions. A key whose scope lists only transformer IDs is read-only: it can
+read alerts, transformer history and maintenance records and call `/api/v1/agent/chat`
+and `/api/v1/agent/events`, but cannot write. Writes need an explicit permission in the
+same key's scope, plus the transformer:
+
+| Permission | Routes |
+|---|---|
+| `@ingest` | `POST /api/v1/data/reading`, `/data/batch`, `/data/upload`, `POST /api/v1/maintenance/records` |
+| `@alerts` | `PATCH /api/v1/alerts/{alert_id}/acknowledge`, `/resolve` |
+
+For example: `TX-001:<chat-secret>;TX-001,@ingest:<ingest-secret>;TX-001,@alerts:<alerts-secret>`.
+A key without the permission gets 403, and so does a key with a permission but no
+transformer scope. Misspelled permissions grant nothing. Give the agent caller a
+chat-only key, so data it writes can never come back to it as backend evidence.
+
+Future timestamps. Sensor-reading `timestamp` and maintenance-record `occurred_at`
+values are normalized to UTC (naive values are treated as UTC). They are rejected with
+422 before any database write if they are more than 5 minutes later than the server's
+current UTC time (`MAX_FUTURE_SKEW` in `app/schemas/sensor.py`; this is a clock-skew
+tolerance, not an engineering threshold). A batch with one future row stores nothing.
+
+### Maintenance Risk Index (agent)
+
+`GET /api/v1/agent/risk?transformer_id=TX-001` returns a deterministic assessment of
+the transformer's stored maintenance records (read-only key scoped to the transformer;
+403 out of scope, 503 if the database or policy is unavailable). `/api/v1/agent/chat`
+attaches the same assessment as `risk_assessment` and cites it by `assessment_id`.
+
+The index is a relative 0-100 summary under `config/maintenance_risk_policy.yaml`,
+which is **versioned and NOT approved**. It is not a failure probability and
+authorizes nothing. Scoring reads only these validated `details` keys of maintenance
+records (free text is never interpreted): `event_id`, `component`, `fault_code`,
+`severity` (`minor|moderate|major|critical`), `repair_outcome`
+(`completed|partial|unresolved|unknown`). Records whose `record_type` is `fault` or
+`failure` are fault events; other records only count toward history coverage.
+
+**Maintenance-record fields needed for a useful assessment.** Records written through
+`POST /api/v1/maintenance/records` (requires `@ingest`) should use:
+
+| Field | Required for | Values |
+|---|---|---|
+| `record_type` | identifying fault events | `fault` or `failure` (others are history only) |
+| `occurred_at` | recency, trend, decay | ISO 8601; not more than 5 minutes in the future |
+| `details.severity` | severity factor, escalation | `minor`, `moderate`, `major`, `critical` |
+| `details.repair_outcome` | repair-outcome factor, escalation | `completed`, `partial`, `unresolved`, `unknown` |
+| `details.component` and/or `details.fault_code` | recurrence | letters, digits, space, `_ / -` (no `.`), up to 64 characters |
+| `details.event_id` (recommended) | deduplication, linking repair updates to a fault | letters, digits, `_ : -`, up to 128 characters |
+
+Example:
+
+```json
+{"transformer_id": "TX-001", "record_type": "fault", "occurred_at": "2026-09-09T12:00:00Z",
+ "details": {"event_id": "EV-1042", "component": "bushing", "fault_code": "E7",
+             "severity": "major", "repair_outcome": "unresolved"}}
+```
+
+Records without these keys are stored and shown as history but cannot be scored; a
+history of such records returns `INSUFFICIENT_EVIDENCE`. Free text in `notes` or
+`details.description` is never interpreted. Field names, allowed values and the
+policy numbers are provisional and need agreement with whoever records maintenance.
+
+| Factor (weight) | 0-100 rule |
+|---|---|
+| Recurrence (30) | faults in 1825 days grouped separately by fault_code and by component; the single largest group is scored (never a sum, so an event with both keys is not double-counted): min(100, 100 x (largest group - 1) / 3) |
+| Severity (25) | max of severity score x 0.5^(age/365 d); unresolved major/critical events never decay |
+| Recency (20) | 100 x 0.5^(age of latest fault / 365 d) |
+| Repair outcome (15) | mean of completed 0 / partial 50 / unresolved 100 / unknown 50 |
+| Frequency trend (10) | faults in last 365 d (R) vs previous 365 d (P): P=0 -> 100 if R>0 else 0, else min(100, 50 x R / P); needs >= 4 faults, 730 d of history and complete retrieval |
+
+A factor needs at least 50% of its inputs documented; the index is the weighted
+mean of available factors and requires 60% of total weight, otherwise
+`INSUFFICIENT_EVIDENCE` with a null index. Categories: >= 70 HIGH, >= 40 MODERATE,
+otherwise `LOW_RECORDED_MAINTENANCE_RISK` (few documented serious events; never
+"safe"). An unresolved or conflicting fault of major severity or above raises a
+review flag and floors the category at HIGH (`category_escalated`). Records sharing
+`event_id`, or identical in every documented field and timestamp, count once; the
+latest dated outcome of an event wins, and disagreeing outcomes at the same time are
+treated as unresolved and flagged. Synthetic, untrusted (instruction-like text),
+undated, future-dated and other-transformer records are excluded and reported.
+
+The chatbot sends the question, assessment and evidence to an injected LLM client
+(none is configured by default) and accepts only JSON whose facts match cited fields
+exactly; any failure returns the deterministic summary with the assessment unchanged.
+
+### Gemini chat explanations (optional)
+
+Install dependencies (`google-genai`, the official Google Gen AI SDK, is in
+`requirements.txt`), then set in `.env`:
+
+```text
+LLM_PROVIDER=gemini
+GEMINI_API_KEY=<your key>
+GEMINI_MODEL=gemini-3.8-flash
+GEMINI_TIMEOUT_SECONDS=30
+GEMINI_THINKING_LEVEL=low
+```
+
+`GEMINI_TIMEOUT_SECONDS` (default 30) is also sent to Google as the server deadline
+(`X-Server-Timeout`), so a slow generation returns 504 `DEADLINE_EXCEEDED` and the chat
+falls back. Successful live calls took about 10-11 s, while two calls hit a 20 s
+deadline; one attempt is made and there are no retries. A value set in `.env` overrides
+the default. `GEMINI_THINKING_LEVEL` (default `low`) bounds the model's thinking effort;
+Google recommends lowering it to reduce latency. `default` sends no thinking setting.
+
+Restart the API. `/api/v1/agent/chat` then sends the question, the deterministic
+risk assessment and the transformer's evidence to Gemini (JSON mode, temperature 0,
+one attempt, bounded timeout). Evidence flagged as instruction-like text is withheld.
+Gemini's reply is accepted only if every cited source exists, every fact matches its
+cited field exactly, and the prose does not contradict the computed index, category or
+policy approval or claim probability, safety or authorization. Otherwise, and on
+missing credentials, timeouts, rate limits or provider errors, the response falls back
+to the deterministic summary (`answer_source: "deterministic_fallback"`, with a warning
+naming the reason). The risk assessment is never produced or modified by Gemini.
+
+Google notes that access to 2.5 models is limited to projects that used them before;
+a new key may need a newer model in `GEMINI_MODEL`. The code default is still
+`gemini-2.5-flash`; the end-to-end live check that passed validation used
+`GEMINI_MODEL=gemini-3.8-flash` with `GEMINI_THINKING_LEVEL=low`.
+
+**Data sent to Google when `LLM_PROVIDER=gemini`.** For each chat request, only for the
+transformer the API key is authorized for:
+
+- the user's question;
+- the deterministic risk assessment (index, category, factors, normalized maintenance
+  fields, flags, limitations);
+- bounded backend evidence: up to 50 recent sensor readings (raw measurement values),
+  up to 50 alerts (formula inputs, values, thresholds, messages, details) and the
+  transformer's maintenance records (record type, date, `details`, `notes`), at most 100
+  evidence items in total;
+- evidence warnings.
+
+Not sent: API keys, database credentials, other transformers' data, or the text of any
+record flagged as instruction-like (replaced by a withheld marker). With the default
+`LLM_PROVIDER=none` nothing is sent. Check that sharing this data with Google is
+acceptable before enabling it.
+
+Tests mock the SDK. An opt-in live check sends only synthetic fixture records:
+`RUN_GEMINI_LIVE=1 pytest -m gemini_live -s` (requires `GEMINI_API_KEY`).
+
+Simulation routes (`/api/v1/simulation/start`, `/pause`, `/reset`, `/step` and
+`/status`) control one process-wide simulator that has no transformer scope, so
+transformer access never grants them. They require a credential whose scope
+includes the `@simulation` permission, for example `@simulation:<secret>`, and return
+401 for missing or invalid keys, 403 for valid keys without the permission, and 503
+when no credentials are configured. Scope items starting with `@` are permissions,
+never transformer IDs; unknown permissions grant nothing.
+
+Alert routes (`/api/v1/alerts`, `/api/v1/alerts/history`, `/api/v1/alerts/{alert_id}`
+and its acknowledge/resolve actions) also require `X-Agent-API-Key`. A
+`transformer_id` filter outside the credential's scope returns 403; omitting the
+filter returns only alerts for the credential's authorized transformers. Alert IDs
+belonging to another transformer return 404 and are never acknowledged or resolved.
+`/api/v1/transformer/latest` and `/history` also require `X-Agent-API-Key`. They
+accept no transformer selector: the server resolves the stored transformer ID and
+returns 403 before reading any data if that ID is outside the credential's scope.
+
 Alert history preserves active, acknowledged, and resolved records; filters are
 optional. Acknowledge/resolve actions update status without deleting the alert.
 Each alert retains its timestamp, parameter/formula, calculated value,
@@ -471,6 +644,160 @@ The agent itself, tool calling, reasoning, and other application logic remain
 for the agent developer to implement.
 
 The updated server was restarted and its live OpenAPI contract checked. Removed transformer-selection routes returned 404. Agent-facing database routes were registered and returned sanitized 503 responses because DATABASE_URL remains unconfigured.
+
+## Hackathon demo runbook (main API: readings, alerts, maintenance, risk, AI explanation)
+
+Verified on 2026-10-10 against a separate migrated database, over real HTTP, with
+`scripts/seed_demo.py`. All demo data is **synthetic**; the risk policy is
+**provisional and unapproved**; nothing here is a failure probability, an ML prediction
+or a remaining-useful-life estimate (no ML model exists in this repository).
+
+**Settings resolution.** Values come from process environment variables first, then
+`.env`, then code defaults. In PowerShell, `$env:NAME = ""` *deletes* a variable
+(the `.env` value then applies); use a single space to blank one for a session.
+
+### 1. Use a database that holds only the demo transformer
+
+`/api/v1/transformer/latest` and `/history` return 400 when more than one transformer
+has readings, and the development database (`DATABASE_URL`) already holds one, so the
+demo needs a separate migrated database on the same PostgreSQL server (port 5432).
+Verified with `digital_transformer_test` (already at revision 0003). To use your own
+`digital_transformer_demo`, create it and run `alembic upgrade head` with `DATABASE_URL`
+pointing at it (same procedure as the test database; not re-run for this runbook).
+Never point the demo at `twin_iot` (port 5434).
+
+### 2. Start the API with the fail-closed launcher
+
+```powershell
+$env:AGENT_CREDENTIALS = "DEMO-TX-01,@ingest:<ingest-secret>;DEMO-TX-01:<chat-secret>"
+.\.venv\Scripts\python.exe scripts\run_demo_api.py --database digital_transformer_test --llm none --port 8000
+```
+
+`scripts/run_demo_api.py` reuses the `DATABASE_URL` credentials in-process with the
+named database (never printed) and refuses to start when: the database is the
+development database or does not end in `_demo`/`_test`; `AGENT_CREDENTIALS` is not set
+in the session with `DEMO-` keys (`.env` credentials are not used); `--llm gemini-live`
+lacks `--allow-live-gemini`; or a real Gemini key would be used in offline mode.
+Choose your own long random secrets. Check:
+`Invoke-RestMethod http://127.0.0.1:8000/api/v1/health/db` returns `healthy`.
+(Verified with `.venv_test`; `.venv` has the same dependencies, including `google-genai`.)
+
+### 3. Load the synthetic demo transformer
+
+```powershell
+$env:DEMO_API_BASE = "http://127.0.0.1:8000"
+$env:DEMO_INGEST_KEY = "<ingest-secret>"
+.\.venv\Scripts\python.exe scripts\seed_demo.py
+```
+
+It posts 3 hourly readings (the last exceeds the configured 1% current
+instrument-error threshold, so the existing rule raises a WARNING alert) and 4
+maintenance records using the documented `details` fields. It refuses IDs not starting
+with `DEMO-`, does not seed twice, and refuses without writing unless the API's
+database holds no transformer or only the demo transformer; against an API on the
+development database it stops with "already holds another transformer" (verified). Records carry `source: synthetic-demo` and a
+"SYNTHETIC DEMO RECORD" note; the API has no provenance column, so it reports them like
+any stored record (`synthetic_evidence: false`). Say so when presenting.
+
+### 4. Show readings, alerts, maintenance history and the risk assessment
+
+Use the read-only chat key (it cannot write: writes return 403):
+
+```powershell
+$H = @{ "X-Agent-API-Key" = "<chat-secret>" }; $B = "http://127.0.0.1:8000/api/v1"
+Invoke-RestMethod "$B/transformer/latest" -Headers $H
+Invoke-RestMethod "$B/alerts?transformer_id=DEMO-TX-01&resolved=false" -Headers $H
+Invoke-RestMethod "$B/maintenance/records?transformer_id=DEMO-TX-01" -Headers $H
+Invoke-RestMethod "$B/agent/risk?transformer_id=DEMO-TX-01" -Headers $H
+```
+
+Verified results: 3 readings; 1 WARNING alert (`3_phase_current_instrument_error`,
+1.4% vs 1.0%); 4 maintenance records; risk index 61.3, `HIGH_MAINTENANCE_RISK`
+(escalated by the unresolved major bushing fault), `PROVISIONAL`, policy
+`maintenance-risk-0.1.0-unapproved`, flags `POLICY_NOT_APPROVED` and
+`UNRESOLVED_SERIOUS_ISSUE`. The index depends on the current date (recency decay).
+
+### 5. AI explanation and the deterministic fallback
+
+```powershell
+$body = '{"transformer_id":"DEMO-TX-01","question":"Which faults have recurred?"}'
+Invoke-RestMethod "$B/agent/chat" -Method Post -Headers $H -ContentType "application/json" -Body $body
+```
+
+- `LLM_PROVIDER=none`: `answer_source: deterministic` with a risk summary.
+- Fallback without contacting Google (verified): restart with
+  `scripts\run_demo_api.py --database digital_transformer_test --llm gemini-offline`.
+  Chat returns `answer_source: deterministic_fallback` and the warning "The AI explanation
+  was unavailable (missing_credentials)"; the risk assessment is unchanged. Do not blank
+  the key by hand: in PowerShell `$env:GEMINI_API_KEY = ""` deletes the variable and the
+  `.env` key is used (this caused one unintended live call during preparation).
+- Live Gemini (sends the demo evidence to Google): put `GEMINI_API_KEY`,
+  `GEMINI_MODEL=gemini-3.8-flash`, `GEMINI_THINKING_LEVEL=low` and
+  `GEMINI_TIMEOUT_SECONDS=30` in `.env`, then start with
+  `--llm gemini-live --allow-live-gemini`. An accepted answer has `answer_source: llm`
+  and `facts` whose citations were checked field by field. Google may return 503/504 at
+  busy times; the chat then falls back.
+
+### 6. 3D dashboard
+
+`dashboard/` is served by the separate `twin_iot` API (port 8020, its own PostgreSQL
+on 5434, `psycopg2`), which is not runnable in this environment. Served as static files
+(`python -m http.server` in `dashboard/`), the page renders the 3D transformer and its
+controls and reports "API unavailable: HTTP 404 ... (is the twin_iot API running?)".
+Its Assistant panel is a disabled placeholder; it is not connected to `/api/v1/agent/chat`.
+The 3D view shows `twin_iot` data, not the main API's demo transformer.
+
+## Integration contracts and open blockers
+
+Documented, not implemented: each needs a teammate decision or a service unavailable here.
+
+**twin_iot service (dashboard and 3D data).** Run from inside `twin_iot/` (its package is
+also called `app`): `python -m uvicorn app.api.main:app --port 8020`. It needs the Python
+packages `fastapi`, `uvicorn`, `pydantic`, `PyYAML`, `python-multipart` and `psycopg2`
+(`psycopg2` is not in `requirements.txt` and is installed in neither venv); a PostgreSQL
+database at `TWIN_DATABASE_URL` (default `postgresql://twin@localhost:5434/twin_iot`,
+trust auth, separate from the main database; startup refuses an Alembic-managed
+database); `TWIN_API_CREDENTIALS` for uploads, readings and signals; and data from
+`scripts/simulate.py` (random synthetic hourly readings, default transformer `T1`) or a
+CSV upload. None of this was runnable in this environment. Served as static files,
+`dashboard/` renders the 3D model and reports "API unavailable: HTTP 404 ... (is the
+twin_iot API running?)" (verified).
+
+**Consistent transformer IDs.** The dashboard shows twin_iot transformers (`T1` by
+default) from its own database; the main API demo uses `DEMO-TX-01`. The two databases are
+not linked. To present one transformer, generate the twin_iot data with the same ID
+(`python scripts/simulate.py --transformer DEMO-TX-01`, synthetic; not run here) and say
+that the 3D view and the risk/chat results come from separate synthetic datasets.
+
+**Assistant panel to `POST /api/v1/agent/chat`** (the panel is a disabled placeholder):
+
+- Request: `Content-Type: application/json`; header `X-Agent-API-Key` with a read-only key
+  scoped to the transformer (never a key with `@ingest` or `@alerts`); body
+  `{"transformer_id": str, "question": str}` (question 1-2000 characters, no other fields).
+- Response: `transformer_id`, `answer`, `answer_source` (`deterministic`, `llm` or
+  `deterministic_fallback`), `evidence_source_ids`, `warnings`, `synthetic_evidence`,
+  `facts[{statement, source_ids, assertions[{source_id, field, expected_value}]}]`,
+  `inferences[{statement, source_ids}]` and `risk_assessment` (same shape as
+  `GET /api/v1/agent/risk`, or null). Errors: 401 bad key, 403 out-of-scope transformer,
+  422 invalid body or guardrail violation, 503 database or backend unavailable.
+- Rendering: insert all text with `textContent`; show `warnings`; mark `facts` as checked
+  citations and `inferences` as interpretation; show `risk_assessment.policy_approved`
+  (false) and the review flags; never present the index as a probability.
+- Origin and CORS: the dashboard is served by twin_iot (port 8020) and the chat API by the
+  main app (port 8000). The main app enables CORS only with `DEBUG=true` (all origins,
+  no credentials). Recommended: a same-origin proxy route in twin_iot that holds the chat
+  key server-side and forwards the two fields, so the browser never holds an API key.
+  Local-demo alternative only: DEBUG CORS plus a key typed by the operator and kept in
+  `sessionStorage` (the pattern the dashboard already uses for its upload key).
+
+**Frontend ingestion (`origin/FRONTEND`, `frontend/twin-api.js`).** That page is served by
+its branch's main app at `/twin/` (same origin, no CORS needed) and calls
+`GET /api/v1/transformer/latest`, `GET /api/v1/alerts` and `POST /api/v1/data/reading`
+without a key, so all three now return 401. It needs a read key for the GETs and an
+`@ingest` key scoped to its transformer for the POST. Never embed either in browser code:
+post readings from a server-side process that holds the key, or, for a local demo only,
+have the operator type keys per session into `sessionStorage`. Merging that branch also
+requires reconciling its `app/main.py` (static `/twin/` mount) with the current one.
 
 ## First rule: 3-Phase Current Instrument Error
 

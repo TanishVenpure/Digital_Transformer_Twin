@@ -1,21 +1,16 @@
 import pytest
-from fastapi.testclient import TestClient
 from sqlalchemy import func, select
 
-from app.database.db import get_db
 from app.database.repository import Repository
-from app.main import create_app
 from app.models import Alert, SensorReading
-from tests.test_postgres_integration import postgres_session
+from tests.test_postgres_integration import integration_client, postgres_session
 from tests.test_voltage_instrument_error import CURRENT, RULE, features
 
 pytestmark = pytest.mark.integration
 
 
 def client_for(session):
-    application = create_app()
-    application.dependency_overrides[get_db] = lambda: session
-    return TestClient(application)
+    return integration_client(session)
 
 
 def payload(data):

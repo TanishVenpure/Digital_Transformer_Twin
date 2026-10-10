@@ -63,6 +63,27 @@ python scripts/simulate.py
 python -m uvicorn app.api.main:app --port 8020
 ```
 
+**Security.** This server has its own credentials; main-backend `AGENT_CREDENTIALS` keys
+grant nothing here.
+
+- `POST /api/readings`, `POST /api/upload` and `POST /api/twin3d/signal` require an
+  `X-Twin-API-Key` header. Configure `TWIN_API_CREDENTIALS` as semicolon-separated
+  `transformer_id[,transformer_id]:secret` entries. Missing configuration returns 503, a
+  missing or invalid key 401, and an out-of-scope transformer 403. Signals for another
+  transformer's reading return 404.
+- An upload is rejected before anything is deleted or stored if any row names a
+  transformer outside the key's scope, or is malformed or future-dated. Uploads are limited
+  to 2 MiB.
+- Readings dated more than `TWIN_MAX_FUTURE_SKEW_SECONDS` (default 300) in the future are
+  rejected, so one bad timestamp cannot block later genuine readings.
+- Requests whose `Host` is not `localhost` or `127.0.0.1` are rejected, which blocks DNS
+  rebinding. Set `TWIN_ALLOWED_HOSTS` only if you deliberately serve another host name.
+- GET routes stay unauthenticated for the local dashboard. Keep the default loopback bind
+  and do not use `--host 0.0.0.0`.
+- Startup refuses an Alembic-managed database, so `TWIN_DATABASE_URL` cannot point at the
+  main backend database.
+- The dashboard asks for the key on the first upload and keeps it only for that browser tab.
+
 - **Validation:** every input of the 7 IoTs is range- and type-checked (`config/validation.yaml`).
 - **3D signalling:** when an IoT's threshold is met, FastAPI selects that IoT's view
   (`config/models.yaml`) and calls the Blender bridge (`app/twin3d/blender_bridge.py`; the calls

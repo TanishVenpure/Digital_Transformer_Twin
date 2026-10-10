@@ -1,0 +1,9 @@
+﻿{
+  "transformer_id": "TX-001",
+  "record_type": "inspection",
+  "occurred_at": "2026-10-09T17:50:00Z",
+  "details": {
+    "description": "Synthetic local verification record"
+  },
+  "notes": "Test-only record; not a field maintenance record."
+}

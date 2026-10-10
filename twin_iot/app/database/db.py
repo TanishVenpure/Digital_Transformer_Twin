@@ -89,6 +89,16 @@ def connect(url: str = DATABASE_URL):
         connection.close()
 
 
+def refuse_managed_database(connection) -> None:
+    """Never create twin_iot tables inside an Alembic-managed (main backend) database."""
+    with connection.cursor() as cursor:
+        cursor.execute("SELECT to_regclass('alembic_version') IS NOT NULL")
+        if cursor.fetchone()[0]:
+            raise RuntimeError(
+                "TWIN_DATABASE_URL points at an Alembic-managed database; use a separate twin_iot database"
+            )
+
+
 def create_schema(connection) -> None:
     with connection.cursor() as cursor:
         cursor.execute(SCHEMA)

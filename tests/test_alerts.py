@@ -79,6 +79,15 @@ def test_repository_applies_all_alert_filters():
     assert 3 in query.params.values()
 
 
+def test_alert_transformer_filter_is_applied_in_database_query():
+    session = MagicMock(spec=Session)
+    session.scalars.return_value.all.return_value = []
+    Repository(session).alerts(transformer_id="T-A", limit=10, offset=0)
+    query = session.scalars.call_args.args[0].compile(dialect=postgresql.dialect())
+    assert "alerts.transformer_id" in str(query)
+    assert "T-A" in query.params.values()
+
+
 @pytest.mark.parametrize("operator,value,expected", [
     (">", 2, True), (">", 1, False), (">=", 1, True),
     ("<", 0, True), ("<", 1, False), ("<=", 1, True),
@@ -123,6 +132,7 @@ def test_alert_history_pagination_and_filters(client):
         response = client.get("/api/v1/alerts/history", params={
             "limit": 2, "offset": 4, "resolved": "false", "acknowledged": "false",
             "severity": "fixture", "parameter": "fixture",
+            "transformer_id": "T01",
         })
     assert response.status_code == 200
     body = response.json()
@@ -132,6 +142,149 @@ def test_alert_history_pagination_and_filters(client):
     assert query.call_args.kwargs["offset"] == 4
     assert query.call_args.kwargs["resolved"] is False
     assert query.call_args.kwargs["acknowledged"] is False
+    assert query.call_args.kwargs["transformer_id"] == "T01"
+
+
+def test_alert_and_history_transformer_filter_isolates_records_and_supports_unknown_id(client):
+    from unittest.mock import patch
+
+    records = []
+    for identifier, transformer_id in enumerate(("T-A", "T-B", "T-A"), start=1):
+        record = alert_record()
+        record.id = identifier
+        record.transformer_id = transformer_id
+        records.append(record)
+
+    def filtered_alerts(**filters):
+        transformer_id = filters.get("transformer_id")
+        selected = [record for record in records if transformer_id is None or record.transformer_id == transformer_id]
+        return selected[filters.get("offset", 0):filters.get("offset", 0) + filters.get("limit", 50)]
+
+    with patch.object(Repository, "alerts", side_effect=filtered_alerts) as query:
+        list_response = client.get("/api/v1/alerts", params={"transformer_id": "T-A"})
+        history_response = client.get("/api/v1/alerts/history", params={
+            "transformer_id": "T-A", "limit": 1, "offset": 1,
+        })
+        unknown_response = client.get("/api/v1/alerts", params={"transformer_id": "T-UNKNOWN"})
+
+    assert [item["transformer_id"] for item in list_response.json()] == ["T-A", "T-A"]
+    assert [item["transformer_id"] for item in history_response.json()["items"]] == ["T-A"]
+    assert history_response.json()["next_offset"] is None
+    assert unknown_response.json() == []
+    assert query.call_count == 3
+
+
+def test_omitting_transformer_filter_preserves_all_alerts(client):
+    from unittest.mock import patch
+
+    records = []
+    for identifier, transformer_id in enumerate(("T-A", "T-B"), start=1):
+        record = alert_record()
+        record.id = identifier
+        record.transformer_id = transformer_id
+        records.append(record)
+
+    with patch.object(Repository, "alerts", return_value=records) as query:
+        response = client.get("/api/v1/alerts")
+
+    assert [item["transformer_id"] for item in response.json()] == ["T-A", "T-B"]
+    assert query.call_args.kwargs["transformer_id"] is None
+    # Omitting the filter is limited to the credential's scope, never all transformers.
+    assert query.call_args.kwargs["transformer_ids"] == [
+        "T-A", "T-UNKNOWN", "T01", "TX-001", "TX-UNKNOWN", "actual-source-ID", "source-ID",
+    ]
+    assert "T-OTHER" not in query.call_args.kwargs["transformer_ids"]
+
+
+@pytest.mark.parametrize("path,method", [
+    ("/api/v1/alerts", "get"),
+    ("/api/v1/alerts/history", "get"),
+    ("/api/v1/alerts/1", "get"),
+    ("/api/v1/alerts/1/acknowledge", "patch"),
+    ("/api/v1/alerts/1/resolve", "patch"),
+])
+@pytest.mark.parametrize("headers", [{"X-Agent-API-Key": ""}, {"X-Agent-API-Key": "wrong-key"}])
+def test_alert_routes_require_valid_credentials(client, db, path, method, headers):
+    record = alert_record()
+    db.get.return_value = record
+    response = getattr(client, method)(path, headers=headers)
+    assert response.status_code == 401
+    assert record.acknowledged is False and record.resolved is False
+
+
+def test_alert_routes_without_header_are_rejected(client):
+    client.headers.pop("X-Agent-API-Key")
+    assert client.get("/api/v1/alerts").status_code == 401
+
+
+@pytest.mark.parametrize("path", ["/api/v1/alerts", "/api/v1/alerts/history"])
+def test_out_of_scope_transformer_filter_is_forbidden(client, path):
+    from unittest.mock import patch
+
+    with patch.object(Repository, "alerts", return_value=[]) as query:
+        response = client.get(path, params={"transformer_id": "T-OTHER"})
+    assert response.status_code == 403
+    query.assert_not_called()
+
+
+@pytest.mark.parametrize("path,method", [
+    ("/api/v1/alerts/1", "get"),
+    ("/api/v1/alerts/1/acknowledge", "patch"),
+    ("/api/v1/alerts/1/resolve", "patch"),
+])
+def test_out_of_scope_alert_is_hidden_and_not_modified(client, db, path, method):
+    record = alert_record()
+    record.transformer_id = "T-OTHER"
+    db.get.return_value = record
+    response = getattr(client, method)(path)
+    assert response.status_code == 404
+    assert record.acknowledged is False
+    assert record.resolved is False and record.resolved_at is None
+    db.commit.assert_not_called()
+
+
+def test_scoped_credential_can_manage_its_own_alert(client, db):
+    record = alert_record()
+    record.transformer_id = "T-OTHER"
+    db.get.return_value = record
+    response = client.patch(
+        "/api/v1/alerts/1/acknowledge", headers={"X-Agent-API-Key": "other-scope-key"},
+    )
+    assert response.status_code == 200
+    assert record.acknowledged is True
+
+
+def test_repository_restricts_alerts_to_authorized_transformers():
+    session = MagicMock(spec=Session)
+    session.scalars.return_value.all.return_value = []
+    Repository(session).alerts(transformer_ids=["T-A", "T-B"], limit=10, offset=0)
+    query = session.scalars.call_args.args[0].compile(dialect=postgresql.dialect())
+    assert "alerts.transformer_id IN" in str(query)
+    assert ["T-A", "T-B"] in query.params.values()
+
+
+def test_transformer_filter_preserves_severity_status_and_date_filters(client):
+    from unittest.mock import patch
+
+    record = alert_record()
+    record.transformer_id = "T-A"
+    record.severity = "critical"
+    record.resolved = True
+
+    with patch.object(Repository, "alerts", return_value=[record]) as query:
+        response = client.get("/api/v1/alerts", params={
+            "transformer_id": "T-A", "severity": "critical", "resolved": "true",
+            "start_date": "2026-10-08T00:00:00Z", "end_date": "2026-10-10T00:00:00Z",
+        })
+
+    assert response.status_code == 200
+    assert response.json()[0]["transformer_id"] == "T-A"
+    filters = query.call_args.kwargs
+    assert filters["transformer_id"] == "T-A"
+    assert filters["severity"] == "critical"
+    assert filters["resolved"] is True
+    assert filters["start_date"].tzinfo == timezone.utc
+    assert filters["end_date"].tzinfo == timezone.utc
 
 
 def test_history_invalid_date_range(client):
@@ -141,11 +294,13 @@ def test_history_invalid_date_range(client):
     assert response.status_code == 400
 
 
-def test_agent_contract_has_no_transformer_selector(client):
+def test_agent_contract_exposes_alert_transformer_selector(client):
     schema = client.get("/openapi.json").json()
     assert "/api/v1/transformers" not in schema["paths"]
     assert "/api/v1/transformer/latest" in schema["paths"]
     assert "/api/v1/transformer/history" in schema["paths"]
-    for path in ("/api/v1/alerts", "/api/v1/alerts/history", "/api/v1/transformer/history"):
+    for path in ("/api/v1/alerts", "/api/v1/alerts/history"):
         parameters = schema["paths"][path]["get"].get("parameters", [])
-        assert all(parameter["name"] != "transformer_id" for parameter in parameters)
+        assert any(parameter["name"] == "transformer_id" for parameter in parameters)
+    history_parameters = schema["paths"]["/api/v1/transformer/history"]["get"].get("parameters", [])
+    assert all(parameter["name"] != "transformer_id" for parameter in history_parameters)

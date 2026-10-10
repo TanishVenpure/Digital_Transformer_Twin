@@ -17,8 +17,8 @@ class TransformerService:
             raise BadRequest("This backend expects one transformer; stored data contains multiple IDs")
         return identifiers[0] if identifiers else None
 
-    def latest(self):
-        transformer_id = self.sole_transformer_id()
+    def latest(self, transformer_id: str | None):
+        """Latest data for a transformer ID already resolved and authorized by the caller."""
         readings = self.repository.readings(transformer_id, limit=1) if transformer_id else []
         metrics = self.repository.daily_metrics(transformer_id, limit=1) if transformer_id else []
         return {
@@ -27,9 +27,9 @@ class TransformerService:
             "latest_daily_metric": metrics[0] if metrics else None,
         }
 
-    def history(self, *, start_date=None, end_date=None, limit=50, offset=0):
+    def history(self, transformer_id: str | None, *, start_date=None, end_date=None, limit=50, offset=0):
+        """History for a transformer ID already resolved and authorized by the caller."""
         start, end = validate_date_range(start_date, end_date)
-        transformer_id = self.sole_transformer_id()
         if transformer_id is None:
             return {"transformer_id": None, "recent_readings": [], "daily_metrics": [], "alerts": []}
         return {

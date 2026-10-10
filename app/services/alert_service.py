@@ -24,21 +24,25 @@ class AlertService:
             next_offset=offset + limit if len(records) > limit else None,
         )
 
-    def get_alert(self, alert_id: int):
+    def get_alert(self, alert_id: int, *, authorized_transformers: set[str] | None = None):
         alert = self.repository.get_alert(alert_id)
-        if alert is None:
+        # Out-of-scope alerts are reported as missing so IDs cannot be probed.
+        if alert is None or (
+            authorized_transformers is not None
+            and alert.transformer_id not in authorized_transformers
+        ):
             raise ResourceNotFound("Alert not found")
         return alert
 
-    def acknowledge(self, alert_id: int):
-        alert = self.get_alert(alert_id)
+    def acknowledge(self, alert_id: int, *, authorized_transformers: set[str] | None = None):
+        alert = self.get_alert(alert_id, authorized_transformers=authorized_transformers)
         alert.acknowledged = True
         self.session.commit()
         self.session.refresh(alert)
         return alert
 
-    def resolve(self, alert_id: int):
-        alert = self.get_alert(alert_id)
+    def resolve(self, alert_id: int, *, authorized_transformers: set[str] | None = None):
+        alert = self.get_alert(alert_id, authorized_transformers=authorized_transformers)
         if not alert.resolved:
             alert.resolved = True
             alert.resolved_at = utc_now()

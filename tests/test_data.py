@@ -41,6 +41,13 @@ def test_invalid_api_schema(client):
     assert all("input" not in error for error in response.json()["detail"])
 
 
+def test_ingestion_rejects_transformer_outside_server_allowlist(client):
+    response = client.post("/api/v1/data/reading", json={
+        **payload(), "transformer_id": "TX-UNAUTHORIZED",
+    })
+    assert response.status_code == 403
+
+
 def test_store_single_reading(client, db):
     def assign_generated_fields():
         from app.models.base import utc_now

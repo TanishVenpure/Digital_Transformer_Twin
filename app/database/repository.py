@@ -1,11 +1,12 @@
 """PostgreSQL persistence and query construction; no domain calculations."""
+from collections.abc import Collection
 from datetime import date, datetime
 from typing import Any
 
 from sqlalchemy import insert, select, union
 from sqlalchemy.orm import Session
 
-from app.models import Alert, DailyMetric, SensorReading
+from app.models import Alert, DailyMetric, MaintenanceRecord, SensorReading
 from app.alerts.types import MaintenanceType
 
 
@@ -24,6 +25,20 @@ class Repository:
             self.session.execute(insert(SensorReading), rows)
         return len(rows)
 
+    def add_maintenance_record(self, record: MaintenanceRecord) -> MaintenanceRecord:
+        self.session.add(record)
+        self.session.flush()
+        return record
+
+    def maintenance_history(
+        self, transformer_id: str, *, limit: int = 50, offset: int = 0,
+    ) -> list[MaintenanceRecord]:
+        query = select(MaintenanceRecord).where(MaintenanceRecord.transformer_id == transformer_id)
+        return list(self.session.scalars(
+            query.order_by(MaintenanceRecord.occurred_at.desc(), MaintenanceRecord.id.desc())
+            .limit(limit).offset(offset)
+        ).all())
+
     def store_daily_metric(self, metric: DailyMetric) -> DailyMetric:
         """Future aggregation supplies a complete metric, including actual formula outputs."""
         self.session.add(metric)
@@ -41,8 +56,12 @@ class Repository:
         severity: str | None = None, start_date: datetime | None = None,
         end_date: datetime | None = None, acknowledged: bool | None = None,
         resolved: bool | None = None, limit: int = 50, offset: int = 0,
+        transformer_ids: Collection[str] | None = None,
     ) -> list[Alert]:
         query = select(Alert)
+        if transformer_ids is not None:
+            # Authorization scope; an empty collection intentionally matches nothing.
+            query = query.where(Alert.transformer_id.in_(list(transformer_ids)))
         for column, value in (
             (Alert.transformer_id, transformer_id), (Alert.parameter, parameter),
             (Alert.severity, severity), (Alert.acknowledged, acknowledged),

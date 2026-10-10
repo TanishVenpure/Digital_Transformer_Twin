@@ -5,9 +5,11 @@ invalid inputs), then calls the GET endpoints, writes every exchange to docs/api
 and finally deletes the SAMPLE rows so the dashboard data is unchanged.
 
 Usage: python scripts/api_samples.py [--base http://localhost:8020]
+Set TWIN_API_KEY to a TWIN_API_CREDENTIALS secret authorized for SAMPLE; POSTs require it.
 """
 import argparse
 import json
+import os
 import sys
 import urllib.request
 from datetime import datetime, timedelta, timezone
@@ -22,7 +24,10 @@ TRANSFORMER = "SAMPLE"
 
 
 def call(base: str, method: str, path: str, body: dict | None = None) -> dict:
-    request = urllib.request.Request(base + path, method=method, headers={"Content-Type": "application/json"},
+    headers = {"Content-Type": "application/json"}
+    if os.environ.get("TWIN_API_KEY"):
+        headers["X-Twin-API-Key"] = os.environ["TWIN_API_KEY"]
+    request = urllib.request.Request(base + path, method=method, headers=headers,
                                      data=json.dumps(body).encode() if body is not None else None)
     with urllib.request.urlopen(request) as response:
         return json.loads(response.read())
@@ -46,7 +51,8 @@ def main() -> None:
     parser.add_argument("--base", default="http://localhost:8020")
     args = parser.parse_args()
     OUT.mkdir(parents=True, exist_ok=True)
-    hour = datetime.now(timezone.utc).replace(minute=0, second=0, microsecond=0)
+    # Start three hours back: the API rejects readings dated in the future.
+    hour = datetime.now(timezone.utc).replace(minute=0, second=0, microsecond=0) - timedelta(hours=3)
     stamp = lambda h: (hour + timedelta(hours=h)).isoformat().replace("+00:00", "Z")  # noqa: E731
     exchanges = []
 

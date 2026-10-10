@@ -1,9 +1,15 @@
 from fastapi import APIRouter, Depends
 
+from app.api.agent import require_simulation_access
 from app.schemas.simulation import SimulationStartRequest, SimulationStatusResponse
 from app.simulation.simulator import SimulationManager, get_simulator
 
-router = APIRouter(prefix="/simulation", tags=["simulation"])
+# The simulator is one shared, process-wide instance with no transformer scope, so
+# every route (including future ones) requires the explicit @simulation permission.
+router = APIRouter(
+    prefix="/simulation", tags=["simulation"],
+    dependencies=[Depends(require_simulation_access)],
+)
 
 
 @router.post("/start", response_model=SimulationStatusResponse)

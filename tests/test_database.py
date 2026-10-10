@@ -12,7 +12,9 @@ from app.models import Base
 
 
 def test_metadata_uses_postgresql_jsonb():
-    assert set(Base.metadata.tables) == {"sensor_readings", "daily_metrics", "alerts"}
+    assert set(Base.metadata.tables) == {
+        "sensor_readings", "daily_metrics", "alerts", "maintenance_records",
+    }
     for table in Base.metadata.sorted_tables:
         sql = str(CreateTable(table).compile(dialect=postgresql.dialect()))
         assert "CREATE TABLE" in sql
@@ -21,6 +23,7 @@ def test_metadata_uses_postgresql_jsonb():
     assert isinstance(Base.metadata.tables["daily_metrics"].c.formula_results.type, JSONB)
     assert isinstance(Base.metadata.tables["alerts"].c.formula_inputs.type, JSONB)
     assert isinstance(Base.metadata.tables["alerts"].c.details.type, JSONB)
+    assert isinstance(Base.metadata.tables["maintenance_records"].c.details.type, JSONB)
 
 
 def test_reject_other_database_dialects():
@@ -37,8 +40,8 @@ def test_url_secret_is_masked():
 
 def test_alembic_structure():
     scripts = ScriptDirectory.from_config(Config("alembic.ini"))
-    assert scripts.get_heads() == ["0002"]
-    assert scripts.get_revision("0002").down_revision == "0001"
+    assert scripts.get_heads() == ["0003"]
+    assert scripts.get_revision("0003").down_revision == "0002"
     assert (Path(scripts.dir) / "env.py").is_file()
 
 

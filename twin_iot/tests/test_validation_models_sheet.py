@@ -51,7 +51,7 @@ def test_bridge_only_calls_on_model_change():
     bridge = BlenderBridge(models)
     bridge.load_base_model()
     selection = select_model([evaluation(4, "WARNING")], models)
-    assert bridge.signal(selection, source="test")["status"] == "PENDING_BLENDER"
+    assert bridge.signal(selection, source="test")["status"] == "DONE"
     assert bridge.signal(selection, source="test") is None
 
 

@@ -7,7 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from sqlalchemy.exc import OperationalError, SQLAlchemyError
 
-from app.api import alerts, data, health, simulation, transformers
+from app.api import agent, alerts, data, health, maintenance, simulation, transformers
 from app.config.settings import Settings, get_settings
 from app.database.db import DatabaseNotConfigured, get_engine
 from app.services.errors import BadRequest, PayloadTooLarge, ResourceNotFound
@@ -28,6 +28,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     settings = settings or get_settings()
     # Keep framework traceback responses disabled even in local DEBUG mode.
     application = FastAPI(title=settings.app_name, version=settings.app_version, lifespan=lifespan)
+    application.state.settings = settings
     application.state.simulator = SimulationManager()
     if settings.debug:
         application.add_middleware(
@@ -42,7 +43,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     def root():
         return {"service": settings.app_name, "status": "running"}
 
-    for router in (health.router, data.router, alerts.router, transformers.router, simulation.router):
+    for router in (health.router, data.router, alerts.router, transformers.router, simulation.router, agent.router, maintenance.router):
         application.include_router(router, prefix=settings.api_v1_prefix)
 
     async def not_found(request: Request, exc: ResourceNotFound):

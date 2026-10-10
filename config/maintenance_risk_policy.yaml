@@ -1,0 +1,72 @@
+# Maintenance Risk Index policy (app/agent/maintenance_risk.py).
+#
+# PROVISIONAL DESIGN ASSUMPTIONS - NOT APPROVED ENGINEERING STANDARDS.
+# Every number below is a placeholder awaiting engineering review. The index is a
+# relative 0-100 summary of documented maintenance history; it is NOT a failure
+# probability. Any change to this file must also change `version`.
+version: "maintenance-risk-0.1.0-unapproved"
+approved: false
+
+# Factor weights in percent; must sum to 100.
+weights:
+  recurrence: 30
+  severity: 25
+  recency: 20
+  repair_outcome: 15
+  frequency_trend: 10
+
+# record_type values (case-insensitive) that document a fault or failure event.
+# Other record types (e.g. inspection, repair) count toward history coverage only.
+fault_record_types: [fault, failure]
+
+# Documented severity classification (details.severity) -> 0-100 factor score.
+# Severity is never inferred from free text; unknown labels are reported.
+severity_scale:
+  minor: 25
+  moderate: 50
+  major: 75
+  critical: 100
+
+# Documented repair outcome (details.repair_outcome) -> 0-100 factor score.
+repair_outcome_scores:
+  completed: 0
+  partial: 50
+  unresolved: 100
+# Score for a fault whose outcome is absent or "unknown" (also lowers coverage).
+unknown_outcome_score: 50
+
+# Time decay: weight = 0.5 ** (age_days / half_life). Unresolved events at or above
+# no_decay_min_severity are never decayed.
+decay_half_life_days: 365
+no_decay_min_severity: major
+
+# Recurrence: faults sharing a fault_code (else component) within the window.
+recurrence_window_days: 1825
+recurrence_saturation_repeats: 3   # this many repeats of one key scores 100
+
+# Frequency trend: compare the latest window with the one before it.
+trend_window_days: 365
+trend_min_fault_events: 4
+
+# A factor is scored only if at least this share of its inputs is documented.
+min_factor_field_coverage: 0.5
+# An index is produced only if available factor weights reach this percentage.
+min_weight_coverage: 60
+
+# Category lower bounds on the index, checked from highest to lowest.
+# Below every bound the category is LOW_RECORDED_MAINTENANCE_RISK, which only
+# means few serious events are documented; it does not mean the asset is safe.
+category_bands:
+  HIGH_MAINTENANCE_RISK: 70
+  MODERATE_MAINTENANCE_RISK: 40
+
+# Engineering-review escalation (proposed, unapproved). An unresolved or
+# conflicting fault at or above this severity sets a review flag and raises the
+# category to at least the floor, so a low weighted average cannot hide it.
+escalation:
+  unresolved_min_severity: major
+  unresolved_category_floor: HIGH_MAINTENANCE_RISK
+
+# Maximum maintenance records read per assessment; beyond this the history is
+# reported as incomplete.
+max_records: 1000

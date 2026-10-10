@@ -64,3 +64,58 @@ def test_existing_alert_survives_migration_and_downgrade(postgres_session):
                 assert connection.scalar(text("SELECT count(*) FROM alerts")) == 1
         finally:
             transaction.rollback()
+
+
+def test_maintenance_records_migration_round_trip(postgres_session):
+    chain = [revision(name) for name in (
+        "0001_initial_tables.py", "0002_alert_maintenance_details.py", "0003_maintenance_records.py",
+    )]
+    records = chain[-1]
+    assert (records.revision, records.down_revision) == ("0003", "0002")
+    engine = postgres_session.get_bind().execution_options(schema_translate_map=None)
+    schema = "migration_" + uuid.uuid4().hex
+    with engine.connect() as connection:
+        transaction = connection.begin()
+        try:
+            connection.execute(CreateSchema(schema))
+            connection.execute(text(f'SET LOCAL search_path TO "{schema}"'))
+            operations = Operations(MigrationContext.configure(connection))
+            for module in chain:
+                with patch.object(module, "op", operations):
+                    module.upgrade()
+            inspector = inspect(connection)
+            columns = {item["name"]: item for item in inspector.get_columns("maintenance_records", schema=schema)}
+            assert set(columns) == {
+                "id", "transformer_id", "record_type", "occurred_at", "details", "notes", "created_at",
+            }
+            assert {name for name, item in columns.items() if item["nullable"]} == {"notes"}
+            assert columns["details"]["type"].__class__.__name__ == "JSONB"
+            assert columns["occurred_at"]["type"].timezone is True
+            assert {item["name"] for item in inspector.get_indexes("maintenance_records", schema=schema)} == {
+                "ix_maintenance_records_transformer_id", "ix_maintenance_records_record_type",
+                "ix_maintenance_records_occurred_at", "ix_maintenance_transformer_occurred",
+            }
+            connection.execute(text("""
+                INSERT INTO alerts (
+                    transformer_id, timestamp, parameter, formula_name, formula_value,
+                    threshold, comparison_operator, severity, message, formula_inputs,
+                    details, acknowledged, resolved, created_at
+                ) VALUES (
+                    'legacy', now(), 'fixture', 'fixture', 0, 0, '>', 'fixture',
+                    'Legacy fixture', '{}'::jsonb, '{}'::jsonb, false, false, now()
+                )
+            """))
+            connection.execute(text("""
+                INSERT INTO maintenance_records (transformer_id, record_type, occurred_at, details, notes, created_at)
+                VALUES ('integration', 'fixture', now(), '{"nested": {"preserved": true}}'::jsonb, NULL, now())
+            """))
+            assert connection.scalar(text("SELECT details FROM maintenance_records")) == {"nested": {"preserved": True}}
+            with patch.object(records, "op", operations):
+                records.downgrade()
+                assert not inspect(connection).has_table("maintenance_records", schema=schema)
+                # Downgrading 0003 must leave existing alert history untouched.
+                assert connection.scalar(text("SELECT count(*) FROM alerts")) == 1
+                records.upgrade()
+                assert inspect(connection).has_table("maintenance_records", schema=schema)
+        finally:
+            transaction.rollback()
