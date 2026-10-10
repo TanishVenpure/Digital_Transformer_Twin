@@ -1,0 +1,78 @@
+# Two-timebar model of the CPRI transformer (630 kVA, 11 / 0.433 kV, ONAN).
+#   Timebar 1: one day of fast signals - V / I every 20 ms (per-cycle RMS), top oil and winding every
+#              1 s, ambient and pressure every 1 min, precision devices every 1 min.
+#   Timebar 2: one year of daily readings - oil leakage and the three precision devices.
+# Every constant used by app/twin2 lives here. Values marked ASSUMED are not in the spec and must be
+# replaced by the transformer's own data before trusting absolute results.
+
+transformer:
+  rated_kva: 630.0
+  primary_kv: 11.0             # line-to-line
+  secondary_kv: 0.433          # line-to-line
+  voltage_class: MV_LV         # shown in the header; both windings are judged (electrical.voltage_limits)
+
+electrical:
+  overload_warning_pct: 100.0  # loading = I / I_rated x 100
+  overload_trip_pct: 120.0
+  voltage_limits:              # both windings are judged, each against its own band
+    primary: {high_pct: 6.0, low_pct: 6.0}      # 11 kV side: +-6 %
+    secondary: {high_pct: 6.0, low_pct: 9.0}    # 433 V side: +6 % high, -9 % low
+
+precision:
+  # Each device (current CT, voltage PT, temperature probe) is checked per phase against a reference
+  # instrument: deviation = |measured - reference| / reference x 100.
+  max_deviation_pct: 1.0
+
+thermal:                       # IEC 60076-7 exponential model, ONAN distribution transformer (generic defaults)
+  top_oil_rise_rated: 38.0     # dT_Or, K at rated load (within the 40 K CPRI top-oil rise limit)
+  hotspot_factor: 1.1          # H
+  winding_gradient_rated: 20.0 # g_r, K  ->  dT_HO,r = H * g_r = 22 K
+  loss_ratio: 5.0              # R
+  oil_exponent: 0.8            # x
+  winding_exponent: 1.6        # y
+  tau_oil_min: 180.0           # top-oil time constant
+  tau_winding_min: 7.0         # winding time constant
+  # WTI: top oil + a thermal image of the winding gradient (CT-heated element), its own constants
+  wti_image_gradient_rated: 22.0   # K at rated load (calibrated to H * g_r)
+  wti_image_tau_min: 7.0
+  oti_alarm_c: 95.0
+  oti_trip_c: 105.0
+  wti_alarm_c: 110.0
+  wti_trip_c: 120.0
+  top_oil_rise_limit_k: 40.0   # dT_O above this = analytics warning only, never a trip
+  # analytics (never trip)
+  ageing_reference_c: 98.0     # V = 2 ** ((T_H - 98) / 6), non-thermally-upgraded paper
+  ageing_doubling_k: 6.0
+  residual_min_k: 1.5          # WINDING_EXCESS_HEATING: window mean residual >= 1.5 K ...
+  residual_windows: 2          # ... and larger than the window before, this many windows in a row
+  residual_window_min: 30      # SCALED for a one-day timebar (the spec's weekly review would need weeks)
+  cooling_ratio_limit: 1.15    # COOLING_DEGRADATION: measured / expected top-oil rise over the window
+  cooling_window_min: 30
+  ageing_window_min: 60        # ACCELERATED_THERMAL_AGEING: mean V over the window > 1
+  ageing_ratio_limit: 1.0
+
+pressure:                      # sealed tank, ideal gas in the headspace
+  oil_volume_l: 300.0          # V_oil0 at the fill temperature
+  gas_volume_l: 45.0           # V_gas0 headspace at fill (ASSUMED; the spec's worked example uses 30 L)
+  fill_pressure_kpa_abs: 101.3 # P0
+  fill_temperature_c: 30.0     # T0
+  expansion_coeff_per_c: 0.00075   # beta (illustrative)
+  atmospheric_kpa: 101.3
+  warning_kpa_abs: 185.0       # ASSUMED: no burst / relief limit in the spec
+  limit_kpa_abs: 230.0         # ASSUMED design limit (relief device setting)
+  forecast_minutes: 30         # PRESSURE warning also when the trend reaches the limit within this time
+
+oil_leak:                      # daily, conservator-less volume balance
+  reference_volume_l: 300.0    # V_ref at T_ref
+  reference_temperature_c: 30.0
+  expansion_coeff_per_c: 0.00075   # beta (illustrative)
+  tolerance_l: 3.0             # leak alarm when V_meas - V_exp,noleak < -tolerance
+  minimum_volume_l: 288.0      # MINIMUM_OIL_LEVEL: measured volume below this
+
+timebar1:
+  date: "2026-07-15"           # the simulated day (UTC)
+  seed: 11
+timebar2:
+  start: "2026-07-01"
+  days: 365
+  seed: 23

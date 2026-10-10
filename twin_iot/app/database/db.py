@@ -218,7 +218,7 @@ def rebuild_maintenance(connection, transformer_id: str, thresholds, actions) ->
                 "signal": signal, "value": value, "threshold": threshold, "comparison_operator": comparison,
                 "unit": unit, "maintenance_type": maintenance_type})
         names = iot_names(thresholds)
-        quality_only = {rule.iot_slot for rule in thresholds.values() if not rule.maintenance_sheet}
+        quality_only = {rule.iot_slot for rule in thresholds.values() if rule.maintenance_type == "SYSTEM_MAINTENANCE"}
         rows = [(rid, ts, [e for e in evs if e[0] not in quality_only]) for rid, ts, evs in rows]
         checks = build_checks(rows, alerts, transformer_id=transformer_id, actions=actions, names=names)
         oil_slot = thresholds["oil_level"].iot_slot

@@ -1,268 +1,134 @@
-"""Tests for the self-contained assistant endpoints (chatbot + risk).
+"""Assistant chat and maintenance risk, grounded in the twin2 datasets at the two timebar cursors.
 
-These tests mock the database layer so no PostgreSQL connection is needed.
+The payloads come from tests/twin2_fixture.py (see its docstring for the six checks), so the tests do not
+depend on the generated data/twin2 files. Everything here is deterministic: no LLM is called.
 """
-import os
-
 import pytest
 from fastapi.testclient import TestClient
 
-os.environ.setdefault("TWIN_API_CREDENTIALS", "T1:test-secret")
+from app.api import main
+from app.twin2 import sheet as twin_sheet
+from tests.twin2_fixture import timebar1, timebar2
 
-from app.api.main import app  # noqa: E402
-
-HEADERS = {"X-Twin-API-Key": "test-secret"}
-BASE_URL = "http://localhost"
-
-# Realistic maintenance check rows
-_SAMPLE_CHECKS = [
-    {
-        "check_no": 1, "transformer_id": "T1",
-        "date": "2026-09-01", "time_utc": "08:00",
-        "opened_at": "2026-09-01T08:00:00+00:00",
-        "iot": 5, "iot_name": "Oil Level",
-        "signal": "WARNING", "flag": "",
-        "previous_status": "NORMAL",
-        "measured_value": 22.5, "threshold": 25.0,
-        "comparison": "<=", "unit": "%",
-        "maintenance_type": "TRANSFORMER_MAINTENANCE",
-        "recommended_action": "Check conservator and top up oil.",
-        "status": "RESOLVED",
-        "resolved_at": "2026-09-02T08:00:00+00:00",
-        "duration_hours": 24.0, "reading_id": 100,
-        "text": "Check #1 ...",
-    },
-    {
-        "check_no": 2, "transformer_id": "T1",
-        "date": "2026-09-15", "time_utc": "12:00",
-        "opened_at": "2026-09-15T12:00:00+00:00",
-        "iot": 5, "iot_name": "Oil Level",
-        "signal": "MAINTENANCE_REQUIRED", "flag": "",
-        "previous_status": "WARNING",
-        "measured_value": 18.0, "threshold": 20.0,
-        "comparison": "<=", "unit": "%",
-        "maintenance_type": "TRANSFORMER_MAINTENANCE",
-        "recommended_action": "Inspect seals and gaskets.",
-        "status": "OPEN",
-        "resolved_at": None,
-        "duration_hours": None, "reading_id": 200,
-        "text": "Check #2 ...",
-    },
-    {
-        "check_no": 3, "transformer_id": "T1",
-        "date": "2026-10-01", "time_utc": "06:00",
-        "opened_at": "2026-10-01T06:00:00+00:00",
-        "iot": 7, "iot_name": "Winding Temperature",
-        "signal": "CRITICAL", "flag": "",
-        "previous_status": "MAINTENANCE_REQUIRED",
-        "measured_value": 85.0, "threshold": 80.0,
-        "comparison": ">=", "unit": "K",
-        "maintenance_type": "TRANSFORMER_MAINTENANCE",
-        "recommended_action": "Emergency shutdown.",
-        "status": "OPEN",
-        "resolved_at": None,
-        "duration_hours": None, "reading_id": 300,
-        "text": "Check #3 ...",
-    },
-    {
-        "check_no": 4, "transformer_id": "T1",
-        "date": "2026-10-05", "time_utc": "14:00",
-        "opened_at": "2026-10-05T14:00:00+00:00",
-        "iot": 5, "iot_name": "Oil Level",
-        "signal": "MAINTENANCE_REQUIRED", "flag": "ACCELERATING_OIL_LEAK",
-        "previous_status": "TREND",
-        "measured_value": None, "threshold": None,
-        "comparison": None, "unit": "%",
-        "maintenance_type": "TRANSFORMER_MAINTENANCE",
-        "recommended_action": "Inspect seals and gaskets.",
-        "status": "OPEN",
-        "resolved_at": None,
-        "duration_hours": None, "reading_id": 350,
-        "text": "Check #4 ...",
-    },
-]
-
-_SAMPLE_ALERTS = [
-    {"ts": "2026-10-01T06:00:00+00:00", "iot_slot": 7, "signal": "CRITICAL",
-     "value": 85.0, "threshold": 80.0, "comparison_operator": ">=",
-     "unit": "K", "message": "Winding Temperature exceeded critical threshold"},
-]
-
-_TRANSFORMER_INFO = [{"transformer_id": "T1", "readings": 200, "start": "2026-09-01T00:00:00+00:00", "end": "2026-10-09T23:00:00+00:00"}]
+T = twin_sheet.TRANSFORMER_ID
 
 
-class _FakeConn:
-    def __enter__(self):
-        return self
-
-    def __exit__(self, *a):
-        pass
-
-    def cursor(self):
-        return type(
-            "C", (),
-            {"execute": lambda s, q, *a: None,
-             "__enter__": lambda s: s,
-             "__exit__": lambda s, *a: None},
-        )()
+@pytest.fixture
+def client(monkeypatch):
+    tb1, tb2 = timebar1(), timebar2()
+    monkeypatch.setattr(twin_sheet, "load_sheet", lambda: (twin_sheet.build_sheet(tb1, tb2), tb1, tb2))
+    return TestClient(main.app, base_url="http://localhost")
 
 
-@pytest.fixture(autouse=True)
-def _mock_db(monkeypatch):
-    """Mock all database calls used by the assistant."""
-    monkeypatch.setattr("app.api.main.db.refuse_managed_database", lambda conn: None)
-    monkeypatch.setattr("app.api.main.db.create_schema", lambda conn: None)
-    monkeypatch.setattr("app.api.main.db.connect", lambda: _FakeConn())
-    monkeypatch.setattr("app.api.assistant.db.connect", lambda: _FakeConn())
-    monkeypatch.setattr("app.api.assistant.db.maintenance_sheet", lambda conn, tid, **kw: list(_SAMPLE_CHECKS))
-    monkeypatch.setattr("app.api.assistant.db.recent_alerts", lambda conn, tid, **kw: list(_SAMPLE_ALERTS))
-    monkeypatch.setattr("app.api.assistant.db.maintenance_events", lambda conn, tid: [])
-    monkeypatch.setattr("app.api.assistant.db.transformers", lambda conn: list(_TRANSFORMER_INFO))
+def chat(client, question, **cursor):
+    r = client.post("/api/assistant/chat", json={"transformer_id": T, "question": question, **cursor})
+    assert r.status_code == 200, r.text
+    return r.json()
+
+
+def risk(client, **cursor):
+    r = client.get("/api/assistant/risk", params={"transformer_id": T, **cursor})
+    assert r.status_code == 200, r.text
+    return r.json()
 
 
 class TestChat:
-    def test_chat_success(self):
-        client = TestClient(app, base_url=BASE_URL)
-        resp = client.post(
-            "/api/assistant/chat",
-            json={"transformer_id": "T1", "question": "What is the maintenance status?"},
-        )
-        assert resp.status_code == 200
-        data = resp.json()
-        assert data["answer_source"] == "deterministic"
-        assert "T1" in data["answer"]
-        assert "maintenance" in data["answer"].lower() or "check" in data["answer"].lower()
+    def test_reply_is_deterministic_synthetic_and_states_the_cursors(self, client):
+        body = chat(client, "summary", until="2026-07-15T02:30:00Z", until2="2026-09-20")
+        assert body["answer_source"] == "deterministic" and body["synthetic_evidence"] is True
+        assert body["cursor"] == {"timebar1": "2026-07-15T02:30:00+00:00", "timebar2": "2026-09-20", "minute": 150, "day": 50}
+        assert body["answer"].startswith("At timebar 1 02:30 UTC on 2026-07-15 and timebar 2 2026-09-20:")
 
-    def test_chat_oil_question(self):
-        client = TestClient(app, base_url=BASE_URL)
-        resp = client.post(
-            "/api/assistant/chat",
-            json={"transformer_id": "T1", "question": "Tell me about oil levels"},
-        )
-        assert resp.status_code == 200
-        data = resp.json()
-        assert "oil" in data["answer"].lower()
+    def test_summary_counts_only_checks_up_to_both_cursors(self, client):
+        body = chat(client, "summary", until="2026-07-15T01:30:00Z", until2="2026-08-25")
+        assert "3 checks, 2 open, 1 resolved" in body["answer"]
+        assert "#4" in body["answer"] and "#2" not in body["answer"] and "#5" not in body["answer"]
+        body = chat(client, "summary")   # defaults to the end of both timebars
+        assert "6 checks, 2 open, 4 resolved" in body["answer"]
 
-    def test_chat_alert_question(self):
-        client = TestClient(app, base_url=BASE_URL)
-        resp = client.post(
-            "/api/assistant/chat",
-            json={"transformer_id": "T1", "question": "Show me the alerts"},
-        )
-        assert resp.status_code == 200
-        assert "alert" in resp.json()["answer"].lower()
+    def test_summary_reports_the_open_breaker(self, client):
+        assert "breaker is open" in chat(client, "status", until="2026-07-15T02:40:00Z")["answer"]
+        assert "breaker is open" not in chat(client, "status", until="2026-07-15T02:00:00Z")["answer"]
 
-    def test_chat_trend_flags(self):
-        client = TestClient(app, base_url=BASE_URL)
-        resp = client.post(
-            "/api/assistant/chat",
-            json={"transformer_id": "T1", "question": "Are there any trend flags?"},
-        )
-        assert resp.status_code == 200
-        assert "ACCELERATING_OIL_LEAK" in resp.json()["answer"]
+    def test_topic_question_gives_monitor_value_status_and_checks(self, client):
+        body = chat(client, "what about the oil leak?", until2="2026-08-25")
+        assert "Oil volume (leak) (timebar 2) is NORMAL at -2 L vs no-leak expectation" in body["answer"]
+        assert "2 check(s) recorded so far, 2 open" in body["answer"]
+        assert any("Oil below the minimum level" in f["statement"] for f in body["facts"])
 
-    def test_chat_no_auth_works(self):
-        client = TestClient(app, base_url=BASE_URL)
-        resp = client.post("/api/assistant/chat",
-                           json={"transformer_id": "T1", "question": "What is the status?"})
-        assert resp.status_code == 200
+    def test_short_keywords_match_whole_words_only(self, client):
+        body = chat(client, "is the ct accurate")
+        assert "Current device (CT) (timebar 1)" in body["answer"]
+        assert "Winding" not in chat(client, "what is the tank pressure?")["answer"]   # "pressure" must not match "pt"
 
-    def test_chat_empty_question(self):
-        client = TestClient(app, base_url=BASE_URL)
-        resp = client.post(
-            "/api/assistant/chat",
-            json={"transformer_id": "T1", "question": ""},
-        )
-        assert resp.status_code == 422
+    def test_repairs_list_timebar_2_actions_with_their_resolution(self, client):
+        body = chat(client, "which repairs were done?", until2="2026-09-30")
+        assert "3 maintenance action(s)" in body["answer"]
+        assert "CT recalibrated." in body["answer"] and "Leak repaired and oil topped up." in body["answer"]
+        assert "0 maintenance action(s)" in chat(client, "repairs", until2="2026-08-30")["answer"]
 
-    def test_chat_unknown_transformer(self, monkeypatch):
-        monkeypatch.setattr("app.api.assistant.db.transformers", lambda conn: [])
-        client = TestClient(app, base_url=BASE_URL)
-        resp = client.post(
-            "/api/assistant/chat",
-            json={"transformer_id": "UNKNOWN", "question": "Test"},
-        )
-        assert resp.status_code == 404
+    def test_signals_are_counted_by_level(self, client):
+        body = chat(client, "list the alarms")
+        assert "6 signals recorded up to the cursors" in body["answer"]
+        assert "2 CRITICAL" in body["answer"]
 
-    def test_chat_general_question(self):
-        client = TestClient(app, base_url=BASE_URL)
-        resp = client.post(
-            "/api/assistant/chat",
-            json={"transformer_id": "T1", "question": "How is the transformer doing?"},
-        )
-        assert resp.status_code == 200
-        data = resp.json()
-        assert len(data["answer"]) > 20
-        assert data["facts"] is not None
+    def test_greeting_and_off_topic(self, client):
+        assert chat(client, "hello")["answer"].startswith("Hello!")
+        assert "I can only answer questions about transformer" in chat(client, "best pizza in town")["answer"]
+
+    def test_unknown_transformer_and_bad_cursor(self, client):
+        r = client.post("/api/assistant/chat", json={"transformer_id": "T1", "question": "summary"})
+        assert r.status_code == 404
+        r = client.post("/api/assistant/chat", json={"transformer_id": T, "question": "summary", "until": "soon"})
+        assert r.status_code == 422
+        r = client.post("/api/assistant/chat", json={"transformer_id": T, "question": ""})
+        assert r.status_code == 422
 
 
 class TestRisk:
-    def test_risk_with_data(self):
-        client = TestClient(app, base_url=BASE_URL)
-        resp = client.get("/api/assistant/risk?transformer_id=T1")
-        assert resp.status_code == 200
-        data = resp.json()
-        assert data["risk_category"] in (
-            "HIGH_MAINTENANCE_RISK", "MODERATE_MAINTENANCE_RISK", "LOW_RECORDED_MAINTENANCE_RISK",
-        )
-        assert data["maintenance_risk_index"] is not None
-        assert isinstance(data["maintenance_risk_index"], (int, float))
-        assert 0 <= data["maintenance_risk_index"] <= 100
-        assert data["policy_version"] == "maintenance-risk-0.1.0-unapproved"
-        assert data["policy_approved"] is False
-        assert "failure probability" not in data["methodology_disclaimer"].lower() or "not a failure probability" in data["methodology_disclaimer"].lower()
-        assert len(data["contributing_factors"]) >= 4
+    def test_no_checks_before_the_first_event_is_insufficient_evidence(self, client):
+        body = risk(client, until="2026-07-15T00:10:00Z", until2="2026-08-02")
+        assert body["risk_category"] == "INSUFFICIENT_EVIDENCE"
+        assert body["synthetic"] is True
 
-    def test_risk_has_escalation_for_unresolved_critical(self):
-        client = TestClient(app, base_url=BASE_URL)
-        resp = client.get("/api/assistant/risk?transformer_id=T1", headers={})
-        data = resp.json()
-        # We have an unresolved CRITICAL check — should escalate to HIGH
-        assert data["risk_category"] == "HIGH_MAINTENANCE_RISK"
+    def test_unresolved_critical_check_forces_high(self, client):
+        body = risk(client, until="2026-07-15T00:10:00Z", until2="2026-08-25")
+        assert body["risk_category"] == "HIGH_MAINTENANCE_RISK"
+        assert body["recommendation"]["based_on_check"] == 4
 
-    def test_risk_contributing_factors_weights(self):
-        client = TestClient(app, base_url=BASE_URL)
-        resp = client.get("/api/assistant/risk?transformer_id=T1", headers={})
-        data = resp.json()
-        available = [f for f in data["contributing_factors"] if f["available"]]
-        total_weight = sum(f["weight"] for f in available)
-        assert total_weight >= 60
+    def test_resolution_known_only_from_the_follow_up_day(self, client):
+        before = risk(client, until="2026-07-15T00:10:00Z", until2="2026-08-30")
+        after = risk(client, until="2026-07-15T00:10:00Z", until2="2026-08-31")
+        assert before["risk_category"] == "HIGH_MAINTENANCE_RISK"
+        assert after["risk_category"] != "HIGH_MAINTENANCE_RISK"
 
-    def test_risk_review_flags(self):
-        client = TestClient(app, base_url=BASE_URL)
-        resp = client.get("/api/assistant/risk?transformer_id=T1", headers={})
-        data = resp.json()
-        codes = [f["code"] for f in data["review_flags"]]
-        assert "POLICY_NOT_APPROVED" in codes
+    def test_result_names_cursors_policy_and_data_source(self, client):
+        body = risk(client, until="2026-07-15T02:00:00Z", until2="2026-09-20")
+        assert body["cursors"] == {"timebar1": "2026-07-15T02:00:00+00:00", "timebar2": "2026-09-20"}
+        assert body["data_source"].startswith("twin2 simulated datasets")
+        assert [f["weight"] for f in body["contributing_factors"]] == [30, 25, 20, 15, 10]
+        recurrence = next(f for f in body["contributing_factors"] if f.get("iot_breakdown"))
+        assert {(b["timebar"], b["iot"]) for b in recurrence["iot_breakdown"]} <= {
+            (1, "loading"), (1, "oti"), (2, "oil"), (2, "prec_current")}
 
-    def test_risk_no_auth_works(self):
-        client = TestClient(app, base_url=BASE_URL)
-        resp = client.get("/api/assistant/risk?transformer_id=T1")
-        assert resp.status_code == 200
+    def test_same_cursors_give_the_same_assessment(self, client):
+        a = risk(client, until="2026-07-15T02:00:00Z", until2="2026-09-20")
+        b = risk(client, until="2026-07-15T02:00:00Z", until2="2026-09-20")
+        assert a["assessment_id"] == b["assessment_id"] and a["maintenance_risk_index"] == b["maintenance_risk_index"]
+        c = risk(client, until="2026-07-15T02:01:00Z", until2="2026-09-20")
+        assert c["assessment_id"] != a["assessment_id"]
 
-    def test_risk_no_data(self, monkeypatch):
-        monkeypatch.setattr("app.api.assistant.db.maintenance_sheet", lambda conn, tid, **kw: [])
-        client = TestClient(app, base_url=BASE_URL)
-        resp = client.get("/api/assistant/risk?transformer_id=T1", headers={})
-        assert resp.status_code == 200
-        data = resp.json()
-        assert data["risk_category"] == "INSUFFICIENT_EVIDENCE"
-        assert data["maintenance_risk_index"] is None
-
-    def test_risk_trend_flag_in_review(self):
-        client = TestClient(app, base_url=BASE_URL)
-        resp = client.get("/api/assistant/risk?transformer_id=T1", headers={})
-        data = resp.json()
-        trend_flags = [f for f in data["review_flags"] if f["code"] == "TREND_FLAG"]
-        assert len(trend_flags) >= 1
-        assert "ACCELERATING_OIL_LEAK" in trend_flags[0]["detail"]
+    def test_unknown_transformer_and_bad_cursor(self, client):
+        assert client.get("/api/assistant/risk", params={"transformer_id": "T1"}).status_code == 404
+        assert client.get("/api/assistant/risk", params={"until2": "not-a-date"}).status_code == 422
 
 
-class TestStatus:
-    def test_status(self):
-        client = TestClient(app, base_url=BASE_URL)
-        resp = client.get("/api/assistant/status")
-        assert resp.status_code == 200
-        data = resp.json()
-        assert data["backend"] == "self-contained"
-        assert data["status"] == "ok"
+class TestSheetAndStatus:
+    def test_sheet_endpoint_lists_every_check_without_status(self, client):
+        body = client.get("/api/twin2/sheet").json()
+        assert body["transformer_id"] == T
+        assert [c["check_no"] for c in body["checks"]] == [1, 2, 3, 4, 5, 6]
+        assert all("status" not in c for c in body["checks"])
+
+    def test_status(self, client):
+        assert client.get("/api/assistant/status").json() == {"backend": "self-contained", "status": "ok", "transformer_id": T}

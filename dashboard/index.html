@@ -74,7 +74,7 @@
     grid-template-rows: auto minmax(0, 1fr) auto;
     gap: 16px;
     padding: 16px;
-    pointer-events: none;
+    pointer-events: none;   /* gaps let you orbit the model; the tiles themselves are clickable */
   }
   .overlay > * { pointer-events: auto; min-width: 0; min-height: 0; }
 
@@ -86,6 +86,7 @@
   header h1 { font-size: 16px; margin: 0; font-weight: 600; }
   header .status { color: var(--muted); font-size: 12px; }
 
+  /* gentle drift, a few pixels over several seconds */
   .float { animation: float 9s ease-in-out infinite; }
   .float:nth-child(2n) { animation-delay: -3s; }
   .float:nth-child(3n) { animation-delay: -6s; }
@@ -116,7 +117,7 @@
   .bar { height: 6px; background: var(--track); border-radius: 4px; overflow: hidden; }
   .bar > span { display: block; height: 100%; width: 0; background: var(--placeholder); transition: width .2s, background-color .2s; }
 
-  /* Right: assistant, risk, maintenance sheet, data */
+  /* Right: assistant (dropdown), maintenance sheet, data (dropdown) */
   .col-right { grid-row: 2 / 4; display: flex; flex-direction: column; gap: 12px; min-height: 0; padding: 4px 2px; }
   .col-right > details { flex: none; }
   details.panel > summary { list-style: none; cursor: pointer; border-bottom-color: transparent; user-select: none; }
@@ -137,32 +138,59 @@
   .msg.assistant .fact { margin: 2px 0; padding-left: 8px; border-left: 2px solid var(--border); }
   .msg.error { color: var(--critical); border-color: color-mix(in srgb, var(--critical) 40%, var(--border)); }
   .msg.thinking { color: var(--muted); font-style: italic; }
+  .chat-input input:focus { outline: none; border-color: var(--accent); }
+
+  /* maintenance risk at the two cursors */
+  .risk-body { max-height: 38vh; overflow: auto; padding: 10px 14px; font-size: 12px; }
+  .risk-body .risk-header { display: flex; align-items: baseline; gap: 10px; margin-bottom: 8px; }
+  .risk-body .risk-score { font-size: 16px; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .risk-body .risk-cat { font-size: 12px; font-weight: 600; }
+  .risk-body .risk-count { color: var(--muted); font-size: 11px; margin-left: auto; }
+  .risk-body .risk-factor-detail { border: 1px solid var(--border); border-radius: 4px; margin: 4px 0; }
+  .risk-body .risk-factor-detail summary { cursor: pointer; padding: 5px 8px; display: grid; grid-template-columns: 1fr auto auto; gap: 4px 10px; align-items: center; }
+  .risk-body .risk-factor-detail summary:hover { background: rgba(128,128,128,0.08); }
+  .risk-body .risk-factor-detail summary .label { text-transform: capitalize; font-weight: 500; }
+  .risk-body .risk-factor-detail summary .score { font-variant-numeric: tabular-nums; text-align: right; }
+  .risk-body .risk-factor-detail summary .weight { color: var(--muted); font-variant-numeric: tabular-nums; text-align: right; }
+  .risk-body .factor-evidence { padding: 4px 8px 8px; font-size: 11px; color: var(--muted); border-top: 1px solid var(--border); }
+  .risk-body .factor-evidence .method { margin-bottom: 4px; }
+  .risk-body .factor-evidence table { width: 100%; border-collapse: collapse; margin-top: 4px; }
+  .risk-body .factor-evidence th { text-align: left; font-weight: 600; color: var(--text); padding: 2px 4px; border-bottom: 1px solid var(--border); }
+  .risk-body .factor-evidence td { padding: 2px 4px; }
+  .risk-body .risk-recommendation { background: rgba(128,128,128,0.06); border-radius: 4px; padding: 6px 8px; margin: 6px 0; font-size: 11px; }
+  .risk-body .risk-flag { color: var(--warning); font-size: 11px; margin: 2px 0; }
+  .risk-body .risk-disclaimer { color: var(--muted); font-size: 11px; margin-top: 6px; padding-top: 6px; border-top: 1px solid var(--border); }
+  .risk-unavailable { color: var(--muted); padding: 10px 14px; font-size: 12px; }
+
+  /* maintenance popups raised as either timebar crosses a check */
+  .maint-toasts { position: fixed; right: 392px; top: 92px; z-index: 6; width: 320px; display: flex; flex-direction: column; gap: 6px; pointer-events: none; }
+  .maint-toast {
+    pointer-events: auto; background: var(--glass); -webkit-backdrop-filter: var(--glass-blur); backdrop-filter: var(--glass-blur);
+    border: 1px solid var(--glass-edge); border-left: 3px solid var(--c, var(--accent)); border-radius: 10px;
+    padding: 10px 14px; font-size: 12px; cursor: pointer; animation: toastIn .3s ease-out; box-shadow: 0 4px 20px rgba(0,0,0,.4);
+  }
+  .maint-toast:hover { border-color: var(--accent); border-left-color: var(--c, var(--accent)); }
+  .maint-toast .toast-head { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; }
+  .maint-toast .toast-signal { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; padding: 1px 6px; border-radius: 4px;
+    color: var(--c); background: color-mix(in srgb, var(--c) 20%, transparent); }
+  .maint-toast .toast-title { font-weight: 600; flex: 1; }
+  .maint-toast .toast-dismiss { background: none; border: none; color: var(--muted); font-size: 16px; padding: 0 2px; line-height: 1; }
+  .maint-toast .toast-body { color: var(--muted); font-size: 11px; line-height: 1.5; }
+  .maint-toast .toast-body .action-line { color: var(--text); margin-top: 2px; }
+  .maint-toast.fade-out { animation: toastOut .3s ease-in forwards; }
+  @keyframes toastIn { from { opacity: 0; transform: translateX(40px); } to { opacity: 1; transform: translateX(0); } }
+  @keyframes toastOut { to { opacity: 0; transform: translateX(40px); } }
   .chat-input { display: flex; gap: 8px; padding: 12px 14px; border-top: 1px solid var(--border); }
   .chat-input input {
     flex: 1; min-width: 0; background: var(--panel-2); border: 1px solid var(--border);
     border-radius: 8px; padding: 8px 10px; color: var(--text);
   }
-  .chat-input input:focus { outline: none; border-color: var(--accent); }
   button {
     background: rgba(255, 255, 255, .07); border: 1px solid var(--border); border-radius: 8px;
     padding: 8px 14px; color: var(--text); cursor: pointer; font: inherit;
   }
   button:hover:not(:disabled) { border-color: var(--accent); }
   button:disabled { color: var(--muted); cursor: not-allowed; }
-
-  .risk { flex: 0 0 auto; max-height: 240px; }
-  .risk-body { flex: 1; overflow: auto; padding: 10px 14px; font-size: 12px; }
-  .risk-body .risk-header { display: flex; align-items: baseline; gap: 10px; margin-bottom: 8px; }
-  .risk-body .risk-score { font-size: 24px; font-weight: 700; font-variant-numeric: tabular-nums; }
-  .risk-body .risk-cat { font-size: 13px; font-weight: 600; }
-  .risk-body .risk-factors { display: grid; grid-template-columns: 1fr auto auto; gap: 2px 10px; margin: 6px 0; }
-  .risk-body .risk-factors .label { color: var(--muted); text-transform: capitalize; }
-  .risk-body .risk-factors .score { font-variant-numeric: tabular-nums; text-align: right; }
-  .risk-body .risk-factors .weight { color: var(--muted); font-variant-numeric: tabular-nums; text-align: right; }
-  .risk-body .risk-disclaimer { color: var(--muted); font-size: 11px; margin-top: 6px; padding-top: 6px; border-top: 1px solid var(--border); }
-  .risk-body .risk-flags { margin-top: 4px; }
-  .risk-body .risk-flag { color: var(--warning); font-size: 11px; }
-  .risk-unavailable { color: var(--muted); padding: 10px 14px; font-size: 12px; }
 
   .maint { flex: 1 1 auto; }
   .maint-list { flex: 1; overflow: auto; padding: 6px 0; min-height: 80px; }
@@ -190,6 +218,7 @@
     padding: 8px 12px; font-size: 11px; color: var(--muted);
   }
   .model-bar button { padding: 3px 10px; font-size: 11px; }
+  /* tick rate: seconds of playback per hour of data (base for the speed button) */
   .tick { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); font-size: 12px; }
   .tick input { width: 64px; padding: 5px 8px; border-radius: 8px; border: 1px solid var(--border); background: var(--panel-2); color: var(--text); font: inherit; font-variant-numeric: tabular-nums; }
   .model-bar button[aria-pressed="true"] { background: color-mix(in srgb, var(--accent) 22%, transparent); border-color: color-mix(in srgb, var(--accent) 60%, transparent); }
@@ -270,7 +299,7 @@
   .legend span { display: inline-flex; align-items: center; gap: 5px; }
   .legend i { width: 9px; height: 9px; border-radius: 2px; background: var(--c); }
 
-  /* camera pad */
+  /* camera pad: move / zoom freely; Reset view hands the camera back to the alerts */
   .center { grid-column: 2; grid-row: 2; position: relative; pointer-events: none; }
   .nav {
     position: absolute; right: 0; bottom: 0; pointer-events: auto; padding: 7px;
@@ -287,7 +316,7 @@
   .free { display: none; font-size: 11px; color: var(--accent); margin-top: 2px; }
   .hero.manual .free { display: block; }
 
-  /* ---------- per-monitor graph ---------- */
+  /* ---------- per-monitor graph (glass sheet over the model) ---------- */
   .modal[hidden] { display: none; }
   .modal { position: fixed; inset: 0; z-index: 50; display: grid; place-items: center; padding: 24px; background: rgba(0, 0, 0, .55); }
   .msheet { width: min(1180px, 100%); max-height: calc(100vh - 48px); overflow: auto; display: flex; flex-direction: column; background: rgba(14, 18, 24, .82); }
@@ -334,9 +363,37 @@
   .repairs li time { color: var(--muted); font-family: ui-monospace, Consolas, monospace; white-space: nowrap; }
   .repairs li.none { color: var(--muted); }
 
+  /* ---------- two timebars ---------- */
+  .timebars { display: flex; flex-direction: column; gap: 10px; }
+  .tb-panel .timeline-body { padding: 8px 14px 10px; gap: 6px; }
+  .tb-panel .panel-title { padding: 7px 14px; }
+  .tb-panel .rate { text-transform: none; letter-spacing: 0; }
+  .s-OFF { --c: #6b7280; }
+  .s-NO_DATA { --c: #6b7280; }
+  .health[class*="s-"] .state { color: var(--c, var(--muted)); }
+  .health .value { color: var(--text); font-size: 12px; }
+  .datasets { margin: 0; padding: 10px 14px 14px 30px; display: grid; gap: 6px; font-size: 12px; }
+  .datasets a { color: var(--accent); text-decoration: none; }
+  .datasets a:hover { text-decoration: underline; }
+  .check[role="button"] { cursor: pointer; }
+  .check[role="button"]:hover { background: rgba(255, 255, 255, .04); }
+  .tb-charts { padding: 6px 12px 0; display: grid; gap: 10px; }
+  .tb-charts .chart { position: relative; background: var(--panel-2); border: 1px solid var(--border); border-radius: 10px; padding: 8px 8px 2px; }
+  .tb-charts .chart-title { font-size: 12px; color: var(--muted); margin: 0 4px 2px; }
+  .tb-charts svg { width: 100%; height: auto; display: block; }
+  .tb-charts .ax { fill: var(--muted); font: 11px ui-monospace, Consolas, monospace; }
+  .tb-charts .lim { font: 600 11px system-ui, sans-serif; }
+  .tb-charts .tip { top: 28px; }
+  .tb-charts .tip span { display: block; }
+  .win-bar { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; font-size: 12px; color: var(--muted); }
+  .win-bar button { padding: 3px 10px; font-size: 11px; border-radius: 999px; }
+  .win-bar button[aria-pressed="true"] { background: color-mix(in srgb, var(--accent) 22%, transparent); border-color: color-mix(in srgb, var(--accent) 60%, transparent); }
+
   @media (max-width: 1300px) {
     .overlay { grid-template-columns: 240px 1fr 320px; }
+    .maint-toasts { right: 352px; }
   }
+  /* Narrow screens: model on top, tiles stacked below it */
   @media (max-width: 1100px) {
     body { overflow: auto; }
     .hero { position: relative; height: 62vh; }
@@ -352,6 +409,7 @@
     .stats { grid-template-columns: repeat(3, minmax(0, 1fr)); }
     .plot { height: 300px; }
     .modal { padding: 10px; }
+    .maint-toasts { left: 16px; right: 16px; top: 16px; width: auto; }
   }
 </style>
 </head>
@@ -367,6 +425,7 @@
   </div>
   <div class="model-loading" id="model-loading"></div>
 </div>
+<div class="maint-toasts" id="maint-toasts" aria-live="polite"></div>
 
 <main class="overlay">
   <header class="glass">
@@ -380,53 +439,52 @@
     </div>
   </header>
 
-  <!-- Left: sensor health tiles -->
-  <section class="col-left">
-    <div class="col-label glass"><span>Precision measurement</span><span class="count" id="count-precision"></span></div>
-    <div class="health-grid" id="cards-precision"></div>
-    <div class="col-label glass"><span>Transformer</span><span class="count" id="count-transformer"></span></div>
-    <div class="health-grid" id="cards-transformer"></div>
-  </section>
+  <!-- Left: monitor cards for both timebars -->
+  <section class="col-left" id="cards"></section>
 
-  <!-- Right: assistant, risk, maintenance sheet, data -->
+  <!-- Right: assistant (dropdown), signals & maintenance, datasets (dropdown) -->
   <aside class="col-right">
-    <details class="panel glass" id="chat-panel" open>
-      <summary class="panel-title"><span>Assistant</span><span class="hint">Ask about the transformer</span></summary>
+    <details class="panel glass" id="chat-panel">
+      <summary class="panel-title"><span>Assistant</span><span class="hint">Answers at both timebar cursors</span></summary>
       <div class="chat-body" id="chat-body">
-        <div class="msg assistant">Ask a question about the transformer's maintenance history, risk, or sensor readings.</div>
+        <div class="msg">Ask about loading, voltage, temperatures, pressure, oil, the precision devices, open checks or repairs. Answers use the twin2 datasets up to the two cursors.</div>
       </div>
-      <div class="chat-input">
-        <input type="text" id="chat-input" placeholder="Ask about the transformer…">
-        <button id="chat-send">Send</button>
-      </div>
+      <form class="chat-input" id="chat-form">
+        <input type="text" id="chat-input" placeholder="Ask about the transformer…" maxlength="500" autocomplete="off">
+        <button type="submit" id="chat-send">Send</button>
+      </form>
     </details>
 
-    <details class="panel glass risk" id="risk-panel">
-      <summary class="panel-title"><span>Maintenance risk</span><span class="hint" id="risk-source"></span></summary>
-      <div id="risk-body"><div class="risk-unavailable" id="risk-status">Loading risk assessment…</div></div>
+    <details class="panel glass" id="risk-panel">
+      <summary class="panel-title"><span>Maintenance risk</span><span class="hint" id="risk-source">at both cursors</span></summary>
+      <div id="risk-body"><div class="risk-unavailable">Loading…</div></div>
     </details>
 
     <div class="panel glass maint">
       <div class="panel-title">
-        <span>Maintenance sheet <span id="maint-count"></span></span>
-        <a id="maint-download" href="#" download>CSV</a>
+        <span>Signals &amp; maintenance <span id="ev-count"></span></span>
+        <a id="ev-download" href="/api/twin2/files/events.csv">CSV</a>
       </div>
-      <div class="filters" role="group" aria-label="Filter maintenance checks">
+      <div class="filters" id="ev-filters" role="group" aria-label="Filter signals by timebar">
         <button data-filter="all" aria-pressed="true">All</button>
-        <button data-filter="precision" aria-pressed="false">Precision measurement</button>
-        <button data-filter="transformer" aria-pressed="false">Transformer</button>
+        <button data-filter="1" aria-pressed="false">Timebar 1 · 24 h</button>
+        <button data-filter="2" aria-pressed="false">Timebar 2 · 1 year</button>
       </div>
-      <div class="maint-list" id="maint-list"><div class="empty">No checks yet.</div></div>
+      <div class="maint-list" id="ev-list"><div class="empty">Loading…</div></div>
     </div>
 
     <details class="panel glass" id="data-panel">
-      <summary class="panel-title"><span>Data</span><span class="hint">Upload a CSV</span></summary>
-      <label class="drop" id="drop">
-        <span>Drop data file here</span>
-        <small>CSV · hourly readings · validated on upload</small>
-        <span class="result" id="drop-result"></span>
-        <input type="file" id="file" accept=".csv" hidden>
-      </label>
+      <summary class="panel-title"><span>Data</span><span class="hint">Download the datasets</span></summary>
+      <ul class="datasets">
+        <li><a href="/api/twin2/files/timebar1_electrical_1s.csv">Timebar 1 · voltage / current, 1 s (min / max of 20 ms)</a></li>
+        <li><a href="/api/twin2/files/timebar1_electrical_20ms.csv">Timebar 1 · voltage / current, 20 ms event windows</a></li>
+        <li><a href="/api/twin2/files/timebar1_thermal_1s.csv">Timebar 1 · thermal (OTI, WTI, IEC model, ageing), 1 s</a></li>
+        <li><a href="/api/twin2/files/timebar1_ambient_1min.csv">Timebar 1 · ambient, 1 min</a></li>
+        <li><a href="/api/twin2/files/timebar1_pressure_1min.csv">Timebar 1 · tank pressure, 1 min</a></li>
+        <li><a href="/api/twin2/files/timebar1_precision_1min.csv">Timebar 1 · precision devices, 1 min</a></li>
+        <li><a href="/api/twin2/files/timebar2_daily.csv">Timebar 2 · oil leak + precision devices, daily</a></li>
+        <li><a href="/api/twin2/files/events.csv">All signals and maintenance actions</a></li>
+      </ul>
     </details>
   </aside>
 
@@ -442,28 +500,7 @@
       <label class="check"><input type="checkbox" id="labels-toggle" checked> Labels</label>
     </div>
 
-    <div class="panel glass">
-      <div class="panel-title"><span>Timeline</span><span id="rate">1 hour every 2 s</span></div>
-      <div class="timeline-body">
-        <div class="controls">
-          <button id="back" title="Back one day" disabled>&#9198;</button>
-          <button id="play" title="Play / pause" disabled>&#9654;</button>
-          <button id="fwd" title="Forward one day" disabled>&#9197;</button>
-          <label class="tick" for="tick" title="Seconds of playback for each hour of data at 1x">1 hour every
-            <input type="number" id="tick" min="0.01" max="60" step="0.5" value="2" disabled> s</label>
-          <button id="speed" title="Fast-forward / slow down (multiplies the tick rate)" disabled>1×</button>
-          <span class="time" id="time">--:-- / --:--</span>
-        </div>
-        <div class="track" id="track"><canvas id="strip"></canvas><span class="knob" id="knob"></span></div>
-        <div class="ticks" id="ticks"><span>start</span><span></span><span></span><span></span><span>end</span></div>
-        <div class="issues" id="issues"></div>
-        <div class="legend">
-          <span class="s-NORMAL"><i></i>Normal</span><span class="s-WARNING"><i></i>Warning</span>
-          <span class="s-PREDICTED_MAINTENANCE"><i></i>Predicted</span><span class="s-MAINTENANCE_REQUIRED"><i></i>Maintenance</span>
-          <span class="s-CRITICAL"><i></i>Critical</span>
-        </div>
-      </div>
-    </div>
+    <div id="timebars" class="timebars"></div>
   </section>
 
   <!-- camera pad over the open space around the model -->
@@ -483,43 +520,25 @@
   </section>
 </main>
 
-<!-- per-monitor graph, opened by clicking a monitor card -->
-<div class="modal" id="metric-overlay" hidden role="dialog" aria-modal="true" aria-labelledby="metric-title">
+<!-- per-monitor graphs, opened by clicking a monitor card or a signal -->
+<div class="modal" id="tb-modal" hidden role="dialog" aria-modal="true" aria-labelledby="tb-title">
   <div class="msheet glass">
     <div class="msheet-head">
       <div>
-        <h2 id="metric-title">Metric</h2>
-        <div class="sub" id="metric-sub"></div>
-        <div class="badges"><span class="tag" id="metric-group"></span><span class="pill" id="metric-status"></span></div>
+        <h2 id="tb-title">Monitor</h2>
+        <div class="sub" id="tb-sub"></div>
+        <div class="badges"><span class="tag" id="tb-tag"></span><span class="pill" id="tb-status"></span></div>
       </div>
       <div class="right">
-        <span class="seg" id="metric-view" role="group" aria-label="Chart view">
-          <button data-view="health" aria-pressed="true">Health %</button><button data-view="value" aria-pressed="false">Measured value</button>
+        <span class="seg" id="tb-range" role="group" aria-label="Time range">
+          <button data-range="all" aria-pressed="true">Whole timebar</button><button data-range="zoom" aria-pressed="false">±1 hour</button>
         </span>
-        <span class="seg" id="metric-range" role="group" aria-label="Time range">
-          <button data-range="7d" aria-pressed="true">7 days</button><button data-range="30d" aria-pressed="false">30 days</button><button data-range="all" aria-pressed="false">All</button>
-        </span>
-        <button id="metric-close" aria-label="Close graph">&times;</button>
+        <button id="tb-close" aria-label="Close graphs">&times;</button>
       </div>
     </div>
-    <div class="banner" id="metric-banner" hidden></div>
-    <div class="stats" id="metric-stats"></div>
-    <div class="chart-legend">
-      <span><i class="ln"></i>Metric</span>
-      <span class="s-WARNING"><i class="dash"></i>Warning limit</span>
-      <span class="s-CRITICAL"><i class="dash"></i>Critical limit</span>
-      <span><i class="tri"></i>Maintenance check raised (colour = signal)</span>
-      <span><i class="mnt">M</i>Maintenance performed</span>
-      <span id="legend-inverted" hidden class="inv">&#8595; Axis inverted: higher values are plotted lower, so heading toward the limit reads as a decline</span>
-      <span id="legend-expected" hidden><i class="dash" style="--c:#eef3f8"></i><span id="legend-expected-text">Expected at this load (thermal model)</span></span>
-      <span class="legend-topoil" hidden><i class="band" style="--c:#64748b"></i>Heat from load</span>
-      <span class="legend-topoil" hidden><i class="band" style="--c:#f59e0b"></i>Cooling fault</span>
-      <span class="legend-topoil" hidden><i class="band" style="--c:#ef4444"></i>Low oil</span>
-      <span id="legend-trend" hidden><i class="ln" style="border-top-color:#eef3f8"></i>Daily-peak trend (dashed = projection)</span>
-      <span>Strip below = status per hour</span>
-    </div>
-    <div class="plot" id="metric-plot"><svg id="metric-svg" role="img" aria-label="Metric health over time"></svg><div class="tip" id="metric-tip" hidden></div></div>
-    <div class="repairs"><h3>Maintenance performed in this window</h3><ul id="metric-repairs"></ul></div>
+    <div class="chart-legend"><span>▼ signal raised (colour = level)</span><span>white line = cursor</span><span>shaded = out of service</span></div>
+    <div id="tb-charts" class="tb-charts"></div>
+    <div class="repairs"><h3>Signals for this monitor up to the cursor</h3><ul id="tb-events"></ul></div>
   </div>
 </div>
 
@@ -527,62 +546,20 @@
 <script src="vendor/three/GLTFLoader.js"></script>
 <script src="vendor/three/OrbitControls.js"></script>
 <script src="vendor/three/RoomEnvironment.js"></script>
-<script src="metal.js?v=20261010-7"></script>
-<script src="twin3d.js?v=20261010-7"></script>
-<script src="metric-chart.js?v=20261010-7"></script>
+<script src="metal.js?v=20261011-1"></script>
+<script src="twin3d.js?v=20261011-1"></script>
+<script src="maint-events.js?v=20261011-1"></script>
+<script src="timebars.js?v=20261011-4"></script>
 <script>
 (() => {
-  const API = "/api";
-  // Write calls need X-Twin-API-Key. The operator types it in; it is kept only for this
-  // tab (sessionStorage) and never embedded in the page.
-  const KEY_STORE = "twinApiKey";
-  function writeHeaders(extra = {}) {
-    let key = null;
-    try { key = sessionStorage.getItem(KEY_STORE); } catch (_) { /* storage unavailable */ }
-    return key ? { ...extra, "X-Twin-API-Key": key } : extra;
-  }
-  function askForKey() {
-    const key = window.prompt("API key for uploads and model signalling (kept for this tab only):");
-    try { key ? sessionStorage.setItem(KEY_STORE, key) : sessionStorage.removeItem(KEY_STORE); } catch (_) { /* ignore */ }
-    return Boolean(key);
-  }
-  const DEFAULT_TICK_S = 2;
-  const SPEEDS = [1, 2, 4, 0.5];
-  const LABEL = { NORMAL: "Normal", WARNING: "Warning", PREDICTED_MAINTENANCE: "Predicted", MAINTENANCE_REQUIRED: "Maintenance", CRITICAL: "Critical" };
-  const RANK = { NORMAL: 0, WARNING: 1, PREDICTED_MAINTENANCE: 2, MAINTENANCE_REQUIRED: 3, CRITICAL: 4 };
-  const COLOR = { NORMAL: "#3fb950", WARNING: "#d29922", PREDICTED_MAINTENANCE: "#a371f7", MAINTENANCE_REQUIRED: "#f0883e", CRITICAL: "#f85149" };
-  const MONITORS = {
-    1: { name: "Current Sensor", metric: "Instrument error vs reference", group: "precision", fmt: (v) => [v.toFixed(2), "%"] },
-    2: { name: "Voltage Sensor", metric: "Instrument error vs reference", group: "precision", fmt: (v) => [v.toFixed(2), "%"] },
-    3: { name: "Current", metric: "Load, % of rated current", group: "transformer", fmt: (v) => [v.toFixed(1), "%"] },
-    4: { name: "Voltage", metric: "Supply deviation (external grid)", group: "transformer", fmt: (v) => ["±" + v.toFixed(1), "%"] },
-    5: { name: "Oil Level", metric: "Conservator gauge", group: "transformer", fmt: (v) => [v.toFixed(1), "%"] },
-    6: { name: "Top-Oil Temperature", metric: "Top-oil, absolute", group: "transformer", fmt: (v) => [v.toFixed(1), "°C"] },
-    7: { name: "Winding Temperature", metric: "Hottest phase rise over ambient", group: "transformer", fmt: (v) => [v.toFixed(1), "K"] },
-  };
-  const TREND_FLAGS = {
-    oil_leak: { flag: "ACCELERATING_OIL_LEAK", badge: "Leak accelerating", label: "Accelerating oil leak",
-      title: "Each oil top-up is lasting less time: oil loss is accelerating" },
-    load_growth: { flag: "LOAD_GROWTH", badge: "Load growing", label: "Load growth",
-      title: "Overloads are becoming more frequent: demand is growing toward the transformer's rating" },
-    winding: { flag: "WINDING_EXCESS_HEATING", badge: "Running hot", label: "Winding excess heating",
-      title: "The winding is hotter than its load explains: possible restricted oil flow or winding fault" },
-    top_oil: { flag: "OIL_AGEING", badge: "Oil ageing", label: "Oil ageing",
-      title: "Radiator cleaning recovers less each time and the interval keeps shrinking: the oil itself is ageing" },
-  };
-  const FLAG_LABEL = Object.fromEntries(Object.values(TREND_FLAGS).map((f) => [f.flag, f.label]));
-  FLAG_LABEL.COOLING_DEGRADED = "Cooling degraded";
-  const GROUP = {
-    precision: { label: "Precision Measurement Maintenance", short: "Precision measurement" },
-    transformer: { label: "Transformer Maintenance", short: "Transformer" },
-  };
-
   const $ = (id) => document.getElementById(id);
   const twin = window.Twin3D
     ? Twin3D.create(document.getElementById("model-viewport"), {
         onStatus: (t) => (document.getElementById("model-loading").textContent = t),
+        // link options: ?view=solid|cut|xray  ?explode=0..100 (skips the intro)  ?intro=0
         mode: new URLSearchParams(location.search).get("view") || undefined,
         noIntro: /(^|[?&])(intro=0|explode=)/.test(location.search),
+        // centre the model between the header and the bottom dock, not behind the dock
         offsetY: (w, h) => {
           const header = document.querySelector("header"), dock = document.querySelector(".dock");
           if (!header || !dock || getComputedStyle(document.querySelector(".hero")).position !== "fixed") return 0;
@@ -597,241 +574,21 @@
         },
       })
     : { setStatuses() {}, focus() {}, resetView() {}, toggleSpin() { return false; }, setMode() {}, setOil() {}, setLabels() {}, explode() {}, t: 0 };
-  let chart = null;
-  const state = { data: null, sheet: [], filter: "all", pos: 0, playing: false, speed: 0, tick: DEFAULT_TICK_S, frame: -1, last: 0, model: null, painted: -1, signalBusy: false, signalPending: null };
 
-  const fmtTime = (iso) => { const d = new Date(iso); return d.toISOString().slice(0, 16).replace("T", " "); };
-  const fmtDay = (iso) => new Date(iso).toLocaleDateString(undefined, { day: "numeric", month: "short", timeZone: "UTC" });
-  const setStatusClass = (el, status) => { el.className = el.className.replace(/\bs-\S+/g, "").trim(); if (status) el.classList.add("s-" + status); };
-  const worst = (list) => list.reduce((w, s) => (s && (w == null || RANK[s] > RANK[w]) ? s : w), null);
-  const escHtml = (s) => { const d = document.createElement("div"); d.textContent = s; return d.innerHTML; };
-
-  function buildCards(iots) {
-    const html = { precision: "", transformer: "" };
-    for (const iot of iots) {
-      const m = MONITORS[iot.slot];
-      html[m.group] += `
-        <div class="health glass float" id="iot-${iot.slot}" data-slot="${iot.slot}" role="button" tabindex="0" title="Open the ${m.name} graph">
-          <span class="open" aria-hidden="true">&#8599;</span>
-          <div class="row"><span class="name">${m.name}</span><span class="value">—</span></div>
-          <div class="sub">${m.metric}</div>
-          <span class="flag"></span>
-          <div class="brow"><div class="bar"><span></span></div><span class="hp"></span></div>
-          <div class="state">No data</div>
-        </div>`;
-    }
-    $("cards-precision").innerHTML = html.precision;
-    $("cards-transformer").innerHTML = html.transformer;
-    document.querySelectorAll(".health[data-slot]").forEach((c) => {
-      const go = () => chart && chart.open(Number(c.dataset.slot));
-      c.onclick = go;
-      c.onkeydown = (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); go(); } };
-    });
-  }
-
-  function drawStrip() {
-    const canvas = $("strip"), frames = state.data?.frames;
-    if (!frames) return;
-    const w = Math.max(1, Math.round(canvas.clientWidth * devicePixelRatio)), h = 10;
-    canvas.width = w; canvas.height = h;
-    const ctx = canvas.getContext("2d");
-    for (let x = 0; x < w; x++) {
-      const a = Math.floor((x / w) * frames.length), b = Math.max(a + 1, Math.floor(((x + 1) / w) * frames.length));
-      let s = null;
-      for (let i = a; i < b && i < frames.length; i++) s = worst([s, ...frames[i].s]);
-      ctx.globalAlpha = 0.75;
-      ctx.fillStyle = s ? COLOR[s] : "rgba(255,255,255,.12)";
-      ctx.fillRect(x, 0, 1, h);
-    }
-  }
-  new ResizeObserver(drawStrip).observe($("track"));
-
-  async function load(transformerId) {
-    const [timeline, sheet] = await Promise.all([
-      fetch(`${API}/timeline/${encodeURIComponent(transformerId)}`).then((r) => r.json()),
-      fetch(`${API}/maintenance/${encodeURIComponent(transformerId)}`).then((r) => r.json()),
-    ]);
-    state.data = timeline;
-    state.sheet = sheet.rows;
-    state.pos = 0; state.frame = -1; state.model = null; state.painted = -1;
-    buildCards(timeline.iots);
-    $("maint-download").href = `${API}/maintenance/${encodeURIComponent(transformerId)}?format=csv`;
-    const n = timeline.frames.length;
-    $("status").textContent = `630 kVA · 11 / 0.433 kV · Transformer ${timeline.transformer_id} · ${n} hourly readings · ${fmtDay(timeline.start)} – ${fmtDay(timeline.end)}`;
-    const ticks = [0, .25, .5, .75, 1].map((f) => fmtDay(timeline.frames[Math.round(f * (n - 1))].t));
-    $("ticks").innerHTML = ticks.map((t) => `<span>${t}</span>`).join("");
-    ["back", "play", "fwd", "tick", "speed"].forEach((id) => ($(id).disabled = false));
-    const start = /t=(\d+)/.exec(location.hash);
-    state.pos = start ? Math.min(n - 1, Number(start[1])) : n - 1;
-    drawStrip();
-    if (!chart && window.MetricChart) chart = MetricChart.create({ MONITORS, LABEL, COLOR, GROUP, getState: () => state });
-    render(true);
-    const openSlot = /(?:^|[?&])metric=(\d)/.exec(location.search);
-    if (openSlot && chart && chart.slot == null) chart.open(Number(openSlot[1]));
-  }
-
-  function render(force) {
-    const frames = state.data.frames;
-    const index = Math.min(frames.length - 1, Math.floor(state.pos));
-    const ratio = frames.length > 1 ? state.pos / (frames.length - 1) : 0;
-    $("knob").style.left = `${ratio * 100}%`;
-    if (index === state.frame && !force) return;
-    state.frame = index;
-    const frame = frames[index];
-    if (!frame) return;
-    const days = Math.ceil(frames.length / 24);
-    $("time").textContent = `${fmtTime(frame.t)} UTC · day ${Math.floor(index / 24) + 1} of ${days}`;
-    $("clock").textContent = `${fmtTime(frame.t)} UTC`;
-    $("clock-sub").textContent = `Day ${Math.floor(index / 24) + 1} of ${days}`;
-
-    state.data.iots.forEach((iot, i) => {
-      const el = $(`iot-${iot.slot}`), value = frame.v[i], m = MONITORS[iot.slot];
-      const [num, unit] = value == null ? ["—", ""] : m.fmt(value);
-      el.querySelector(".value").textContent = `${num}${unit}`;
-      const health = window.MetricChart ? MetricChart.healthOf(iot.slot, value, iot) : null;
-      el.querySelector(".bar > span").style.width = health == null ? "0" : `${Math.max(2, health)}%`;
-      el.querySelector(".hp").textContent = health == null ? "" : `${Math.round(health)}%`;
-      el.querySelector(".hp").title = "Health: 100% as new, 0% at the critical limit";
-    });
-    if (chart && chart.slot != null) chart.update();
-
-    const bad = frame.q.filter(([, code]) => code !== "MISSING");
-    const missing = frame.q.length - bad.length;
-    $("issues").innerHTML = frame.q.length
-      ? `<b>Validation:</b> ${bad.map(([f, c]) => `${f} ${c.toLowerCase().replaceAll("_", " ")}`).join(", ")}${bad.length && missing ? ", " : ""}${missing ? `${missing} missing` : ""}`
-      : "All inputs valid";
-
-    paint();
-    renderSheet(frame.t);
-  }
-
-  function paint() {
-    const frame = state.data.frames[state.frame];
-    if (!frame || state.painted === state.frame) return;
-    state.painted = state.frame;
-    const counts = { precision: 0, transformer: 0 };
-    state.data.iots.forEach((iot, i) => {
-      const el = $(`iot-${iot.slot}`), status = frame.s[i];
-      setStatusClass(el, status);
-      el.querySelector(".state").textContent = status ? LABEL[status] : "No data";
-      if (status && status !== "NORMAL") counts[MONITORS[iot.slot].group]++;
-    });
-    for (const [key, info] of Object.entries(TREND_FLAGS)) {
-      const a = state.data.analytics && state.data.analytics[key];
-      if (!a) continue;
-      const card = $(`iot-${a.slot}`), raised = a.flags.some((f) => Date.parse(f.detected_at) <= Date.parse(frame.t));
-      card.classList.toggle("flagged", raised);
-      const badge = card.querySelector(".flag");
-      badge.textContent = info.badge; badge.title = info.title;
-    }
-    $("count-precision").textContent = counts.precision ? `${counts.precision} of 2 need attention` : "All within limits";
-    $("count-transformer").textContent = counts.transformer ? `${counts.transformer} of 5 need attention` : "All within limits";
-    const overall = worst(frame.s);
-    setStatusClass($("overall"), overall);
-    $("overall").textContent = overall ? (overall === "NORMAL" ? "All monitors normal"
-      : `Overall: ${LABEL[overall]} · ${counts.precision + counts.transformer} active`) : "No data";
-    twin.setStatuses(frame.s);
-    renderModel(frame);
-  }
-
-  function renderModel(frame) {
-    if (frame.m === state.model) return;
-    state.model = frame.m;
-    const slot = frame.m === "base" ? null : Number(frame.m.replace("iot", ""));
-    const status = slot ? frame.s[slot - 1] : null;
-    $("model-name").textContent = slot ? `${MONITORS[slot].name} · ${state.data.models[frame.m]}` : state.data.models.base;
-    $("model-signal").textContent = slot ? `${GROUP[MONITORS[slot].group].short} · ${LABEL[status]}` : "All monitors normal";
-    setStatusClass($("model-viewport"), status);
-    twin.focus(slot);
-    signal(frame.id);
-  }
-
-  async function signal(readingId) {
-    if (state.signalBusy) { state.signalPending = readingId; return; }
-    state.signalBusy = true;
-    try {
-      const res = await fetch(`${API}/twin3d/signal`, {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ reading_id: readingId, source: "timeline" }),
-      }).then((r) => r.json());
-      if (res.model_call) {
-        const c = res.model_call;
-        $("model-call").textContent = `${c.action}(${c.model_id}) ← ${c.previous_model ?? "none"} · ${c.model.blend_file} · ${c.status}`;
-      }
-    } catch (e) {
-      $("model-call").textContent = "Signal failed: " + e.message;
-    } finally {
-      state.signalBusy = false;
-      if (state.signalPending != null) { const next = state.signalPending; state.signalPending = null; signal(next); }
-    }
-  }
-
-  function renderSheet(iso) {
-    const until = new Date(iso).getTime();
-    let lo = 0, hi = state.sheet.length;
-    while (lo < hi) { const mid = (lo + hi) >> 1; if (new Date(state.sheet[mid].opened_at).getTime() <= until) lo = mid + 1; else hi = mid; }
-    $("maint-count").textContent = `· ${lo.toLocaleString()} of ${state.sheet.length.toLocaleString()}`;
-    const shown = (c) => state.filter === "all" || MONITORS[c.iot].group === state.filter;
-    const recent = [];
-    let pinned = null;
-    for (let i = lo - 1; i >= 0; i--) if (state.sheet[i].flag) { pinned = state.sheet[i]; break; }
-    if (pinned && shown(pinned)) recent.push(pinned);
-    for (let i = lo - 1; i >= 0 && recent.length < 40; i--) {
-      const c = state.sheet[i];
-      if (c !== pinned && shown(c)) recent.push(c);
-    }
-    $("maint-list").innerHTML = recent.length ? recent.map((c) => {
-      const m = MONITORS[c.iot];
-      const resolved = c.resolved_at && new Date(c.resolved_at).getTime() <= until;
-      return `<div class="check s-${c.signal}${c.flag ? " pinned" : ""}">
-        <span class="no">#${c.check_no}</span><span class="what">${m.name} · ${LABEL[c.signal]}</span>
-        <span class="tags"><span class="tag">${GROUP[m.group].short}</span>${c.flag ? `<span class="tag flagtag">Pinned · ${FLAG_LABEL[c.flag] || c.flag}</span>` : ""}</span>
-        <span class="action">${c.recommended_action}</span>
-        <span class="when">${c.date} ${c.time_utc} UTC · ${resolved ? `resolved after ${c.duration_hours} h` : "open"}</span>
-      </div>`;
-    }).join("") : `<div class="empty">No checks yet.</div>`;
-  }
-
-  document.querySelectorAll(".filters [data-filter]").forEach((b) => (b.onclick = () => {
-    document.querySelectorAll(".filters [data-filter]").forEach((x) => x.setAttribute("aria-pressed", x === b));
-    state.filter = b.dataset.filter;
-    if (state.data) renderSheet(state.data.frames[state.frame].t);
-  }));
-
-  // ---------- playback ----------
-  function tick() {
-    if (!state.data || !Number.isFinite(state.pos)) return setPlaying(false);
-    const now = performance.now();
-    const dt = (now - state.last) / 1000;
-    state.last = now;
-    const max = state.data.frames.length - 1;
-    state.pos = Math.min(max, state.pos + (dt / state.tick) * SPEEDS[state.speed]);
-    render();
-    if (state.pos >= max) setPlaying(false);
-  }
-  function setPlaying(on) {
-    if (on && state.pos >= state.data.frames.length - 1) state.pos = 0;
-    state.playing = on;
-    $("play").innerHTML = on ? "&#10074;&#10074;" : "&#9654;";
-    clearInterval(state.timer);
-    if (on) { state.last = performance.now(); state.timer = setInterval(tick, 1000 / 30); }
-  }
-  const seek = (pos) => { state.pos = Math.max(0, Math.min(state.data.frames.length - 1, pos)); render(); };
-
+  // Reset view: hand the camera back to the alerts (or the whole model when all is normal)
   const resetView = () => {
-    const slot = state.model && state.model !== "base" ? Number(state.model.replace("iot", "")) : null;
+    const slot = window.TimebarsApp && TimebarsApp.currentSlot;
     if (twin.release) twin.release();
     if (slot) twin.focus(slot); else twin.resetView();
   };
   $("view-reset").onclick = resetView;
 
-  // ---------- free navigation ----------
+  // ---------- free navigation: pad (one step per click, hold to repeat) + keyboard ----------
   const NAV = {
     up: () => twin.pan(0, 1), down: () => twin.pan(0, -1), left: () => twin.pan(-1, 0), right: () => twin.pan(1, 0),
     fwd: () => twin.move(1), back: () => twin.move(-1), zin: () => twin.zoom(0.9), zout: () => twin.zoom(1.1),
   };
-  let navTimer = null;
-  let navHold = null;
+  let navTimer = null, navHold = null;
   const stopNav = () => { clearTimeout(navHold); clearInterval(navTimer); navHold = navTimer = null; };
   document.querySelectorAll(".nav [data-nav]").forEach((b) => {
     const act = b.dataset.nav;
@@ -848,15 +605,15 @@
   document.addEventListener("keydown", (e) => {
     if (!twin.pan || e.ctrlKey || e.metaKey || e.altKey) return;
     if (e.target instanceof Element && e.target.matches("input, textarea, select")) return;
-    if (!$("metric-overlay").hidden) return;
+    if (!$("tb-modal").hidden) return;
     const key = e.key.length === 1 ? e.key.toLowerCase() : e.key;
     if (key === "r") { resetView(); e.preventDefault(); return; }
     if (KEYS[key]) { NAV[KEYS[key]](); e.preventDefault(); }
   });
   const linkView = new URLSearchParams(location.search).get("view");
-  if (linkView) document.querySelectorAll(".seg [data-mode]").forEach((x) => x.setAttribute("aria-pressed", x.dataset.mode === linkView));
-  document.querySelectorAll(".seg [data-mode]").forEach((b) => (b.onclick = () => {
-    document.querySelectorAll(".seg [data-mode]").forEach((x) => x.setAttribute("aria-pressed", x === b));
+  if (linkView) document.querySelectorAll(".model-bar .seg [data-mode]").forEach((x) => x.setAttribute("aria-pressed", x.dataset.mode === linkView));
+  document.querySelectorAll(".model-bar .seg [data-mode]").forEach((b) => (b.onclick = () => {
+    document.querySelectorAll(".model-bar .seg [data-mode]").forEach((x) => x.setAttribute("aria-pressed", x === b));
     twin.setMode(b.dataset.mode);
   }));
   $("explode-btn").onclick = () => twin.explode(1, true);
@@ -864,217 +621,159 @@
   $("oil-toggle").onchange = (e) => twin.setOil(e.target.checked);
   $("labels-toggle").onchange = (e) => twin.setLabels(e.target.checked);
   $("view-spin").onclick = () => { $("view-spin").textContent = twin.toggleSpin() ? "Stop" : "Spin"; };
-  $("play").onclick = () => setPlaying(!state.playing);
-  $("back").onclick = () => seek(Math.floor(state.pos) - 24);
-  $("fwd").onclick = () => seek(Math.floor(state.pos) + 24);
-  const showRate = () => {
-    const k = SPEEDS[state.speed], secs = +(state.tick / k).toPrecision(3);
-    $("speed").textContent = `${k}×`;
-    $("rate").textContent = `1 hour every ${secs} s` + (k === 1 ? "" : ` (${state.tick} s at ${k}×)`);
-  };
-  $("speed").onclick = () => { state.speed = (state.speed + 1) % SPEEDS.length; showRate(); };
-  $("tick").addEventListener("change", (e) => {
-    const v = Number(e.target.value);
-    state.tick = Number.isFinite(v) && v > 0 ? Math.min(60, Math.max(0.01, v)) : DEFAULT_TICK_S;
-    e.target.value = state.tick;
-    showRate();
-  });
 
-  const track = $("track");
-  const scrub = (e) => { const r = track.getBoundingClientRect(); seek(((e.clientX - r.left) / r.width) * (state.data.frames.length - 1)); };
-  track.addEventListener("pointerdown", (e) => { if (!state.data) return; track.setPointerCapture(e.pointerId); scrub(e); });
-  track.addEventListener("pointermove", (e) => { if (track.hasPointerCapture(e.pointerId)) scrub(e); });
+  // ---------- assistant, risk and maintenance popups: all follow both timebar cursors ----------
+  const TRANSFORMER_ID = "CPRI-630";
+  const COLORS = { WARNING: "var(--warning)", CRITICAL: "var(--critical)", MAINTENANCE_REQUIRED: "var(--maintenance)", PREDICTED_MAINTENANCE: "var(--predicted)" };
+  const ESC = { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" };
+  const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (ch) => ESC[ch]);
+  let cursor = null;   // { m, d, until, until2 } from the timebars
 
-  // ---------- data drop ----------
-  const drop = $("drop");
-  async function upload(file) {
-    if (!file) return;
-    $("drop-result").textContent = `Uploading ${file.name}…`;
-    const form = new FormData();
-    form.append("file", file);
-    form.append("transformer_id", state.data?.transformer_id || "T1");
-    try {
-      const send = () => fetch(`${API}/upload`, { method: "POST", body: form, headers: writeHeaders() });
-      let res = await send();
-      if (res.status === 401 && askForKey()) res = await send();
-      const body = await res.json();
-      if (!res.ok) throw new Error(body.detail || res.statusText);
-      const issues = Object.entries(body.issues).map(([k, v]) => `${v} ${k.toLowerCase().replaceAll("_", " ")}`).join(", ");
-      $("drop-result").textContent = `${body.stored} stored, ${body.rejected} rejected${issues ? ` · ${issues}` : ""}`;
-      setPlaying(false);
-      await load(body.transformers[0]);
-      loadRisk(body.transformers[0]);
-    } catch (e) {
-      $("drop-result").textContent = "Upload failed: " + e.message;
-    }
-  }
-  drop.addEventListener("dragover", (e) => { e.preventDefault(); drop.classList.add("over"); });
-  drop.addEventListener("dragleave", () => drop.classList.remove("over"));
-  drop.addEventListener("drop", (e) => { e.preventDefault(); drop.classList.remove("over"); upload(e.dataTransfer.files[0]); });
-  $("file").addEventListener("change", (e) => upload(e.target.files[0]));
-
-  // ---------- assistant chatbot ----------------------------------------------------------------
-  const chatBody = $("chat-body");
-  const chatInput = $("chat-input");
-  const chatSend = $("chat-send");
-  let chatBusy = false;
-
-  function chatAddMsg(html, cls) {
+  // chat
+  const chatBody = $("chat-body"), chatInput = $("chat-input"), chatSend = $("chat-send");
+  const chatMsg = (html, cls) => {
     const div = document.createElement("div");
-    div.className = "msg " + cls;
-    div.innerHTML = html;
-    chatBody.appendChild(div);
-    chatBody.scrollTop = chatBody.scrollHeight;
+    div.className = "msg " + cls; div.innerHTML = html;
+    chatBody.appendChild(div); chatBody.scrollTop = chatBody.scrollHeight;
     return div;
-  }
-
-  function formatChatResponse(data) {
-    let html = `<div class="answer">${escHtml(data.answer)}</div>`;
-    html += `<div class="meta">${escHtml(data.answer_source === "llm" ? "Gemini" : data.answer_source === "deterministic_fallback" ? "Deterministic fallback" : "Deterministic")}`;
-    if (data.warnings && data.warnings.length) html += ` · ${data.warnings.map(escHtml).join(", ")}`;
-    html += `</div>`;
+  };
+  function chatHtml(data) {
+    let html = `<div class="answer">${esc(data.answer)}</div>`;
+    const c = data.cursor || {};
+    html += `<div class="meta">Deterministic · synthetic twin2 data${c.timebar1 ? ` · TB1 ${esc(c.timebar1.slice(11, 16))} UTC · TB2 ${esc(c.timebar2)}` : ""}</div>`;
     if (data.facts && data.facts.length) {
       html += `<details class="evidence"><summary>${data.facts.length} cited fact${data.facts.length > 1 ? "s" : ""}</summary>`;
-      data.facts.forEach((f) => { html += `<div class="fact">${escHtml(f.statement)}</div>`; });
+      data.facts.forEach((f) => { html += `<div class="fact">${esc(f.statement)}</div>`; });
       html += `</details>`;
-    }
-    if (data.risk_assessment) {
-      const ra = data.risk_assessment;
-      if (ra.maintenance_risk_index != null) {
-        html += `<div class="meta">Risk index: ${ra.maintenance_risk_index.toFixed(1)} · ${ra.risk_category.replaceAll("_", " ")}</div>`;
-      }
     }
     return html;
   }
-
-  async function sendChat() {
+  $("chat-form").addEventListener("submit", async (e) => {
+    e.preventDefault();
     const question = chatInput.value.trim();
-    if (!question || chatBusy) return;
-    const transformerId = state.data?.transformer_id;
-    if (!transformerId) { chatAddMsg("Load transformer data first.", "error"); return; }
-
-    chatAddMsg(escHtml(question), "user");
-    chatInput.value = "";
-    chatBusy = true;
-    chatSend.disabled = true;
-    chatInput.disabled = true;
-    const thinking = chatAddMsg("Thinking…", "thinking");
-
+    if (!question || chatSend.disabled) return;
+    chatMsg(esc(question), "user");
+    chatInput.value = ""; chatSend.disabled = chatInput.disabled = true;
+    const thinking = chatMsg("Thinking…", "thinking");
     try {
-      const resp = await fetch(`${API}/assistant/chat`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ transformer_id: transformerId, question }),
+      const resp = await fetch("/api/assistant/chat", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ transformer_id: TRANSFORMER_ID, question, until: cursor && cursor.until, until2: cursor && cursor.until2 }),
       });
+      const body = await resp.json().catch(() => ({}));
       thinking.remove();
-      if (resp.status === 502 || resp.status === 503) {
-        const body = await resp.json().catch(() => ({}));
-        chatAddMsg(`Chatbot backend unavailable: ${escHtml(body.detail || "service not reachable")}`, "error");
-      } else if (resp.status === 504) {
-        chatAddMsg("Request timed out. The chatbot backend may be busy.", "error");
-      } else if (!resp.ok) {
-        const body = await resp.json().catch(() => ({}));
-        chatAddMsg(`Error: ${escHtml(body.detail || resp.statusText)}`, "error");
-      } else {
-        chatAddMsg(formatChatResponse(await resp.json()), "assistant");
-      }
-    } catch (e) {
-      thinking.remove();
-      chatAddMsg(`Failed to reach assistant: ${escHtml(e.message)}`, "error");
+      if (resp.ok) chatMsg(chatHtml(body), "assistant");
+      else chatMsg(`Error: ${esc(typeof body.detail === "string" ? body.detail : resp.statusText)}`, "error");
+    } catch (err) {
+      thinking.remove(); chatMsg(`Assistant unavailable: ${esc(err.message)}`, "error");
     } finally {
-      chatBusy = false;
-      chatSend.disabled = false;
-      chatInput.disabled = false;
-      chatInput.focus();
+      chatSend.disabled = chatInput.disabled = false; chatInput.focus();
     }
-  }
+  });
 
-  chatSend.onclick = sendChat;
-  chatInput.addEventListener("keydown", (e) => { if (e.key === "Enter") sendChat(); });
-
-  // ---------- maintenance risk assessment --------------------------------------------------------
+  // risk (debounced while a timebar plays; stale responses are dropped)
   const RISK_COLORS = { HIGH_MAINTENANCE_RISK: "var(--critical)", MODERATE_MAINTENANCE_RISK: "var(--warning)", LOW_RECORDED_MAINTENANCE_RISK: "var(--normal)", INSUFFICIENT_EVIDENCE: "var(--muted)" };
   const RISK_LABELS = { HIGH_MAINTENANCE_RISK: "High maintenance risk", MODERATE_MAINTENANCE_RISK: "Moderate maintenance risk", LOW_RECORDED_MAINTENANCE_RISK: "Low recorded risk", INSUFFICIENT_EVIDENCE: "Insufficient evidence" };
-
-  async function loadRisk(transformerId) {
-    const body = $("risk-body");
-    const source = $("risk-source");
-    body.innerHTML = `<div class="risk-unavailable">Loading risk assessment…</div>`;
-    source.textContent = "";
+  const risk = { timer: null, id: 0, key: "" };
+  function scheduleRisk() {
+    const key = `${cursor.m}|${cursor.d}`;
+    if (key === risk.key) return;
+    risk.key = key;
+    clearTimeout(risk.timer);
+    risk.timer = setTimeout(loadRisk, 400);
+  }
+  async function loadRisk() {
+    const id = ++risk.id;
+    const q = new URLSearchParams({ transformer_id: TRANSFORMER_ID, until: cursor.until, until2: cursor.until2 });
     try {
-      const resp = await fetch(`${API}/assistant/risk?transformer_id=${encodeURIComponent(transformerId)}`);
-      if (resp.status === 502 || resp.status === 503) {
-        const err = await resp.json().catch(() => ({}));
-        body.innerHTML = `<div class="risk-unavailable">${escHtml(err.detail || "Risk backend unavailable")}</div>`;
-        return;
-      }
-      if (!resp.ok) {
-        const err = await resp.json().catch(() => ({}));
-        body.innerHTML = `<div class="risk-unavailable">Error: ${escHtml(err.detail || resp.statusText)}</div>`;
-        return;
-      }
+      const resp = await fetch(`/api/assistant/risk?${q}`);
+      if (!resp.ok) throw new Error(resp.statusText || String(resp.status));
       const data = await resp.json();
-      renderRisk(data);
-    } catch (e) {
-      body.innerHTML = `<div class="risk-unavailable">Risk unavailable: ${escHtml(e.message)}</div>`;
+      if (id === risk.id) renderRisk(data);
+    } catch (err) {
+      if (id === risk.id) $("risk-body").innerHTML = `<div class="risk-unavailable">Risk unavailable: ${esc(err.message)}</div>`;
     }
   }
-
   function renderRisk(data) {
-    const body = $("risk-body");
-    const source = $("risk-source");
     const color = RISK_COLORS[data.risk_category] || "var(--muted)";
     const label = RISK_LABELS[data.risk_category] || data.risk_category.replaceAll("_", " ");
-
-    if (data.risk_category === "INSUFFICIENT_EVIDENCE") {
-      body.innerHTML = `<div class="risk-body">
-        <div class="risk-header"><span class="risk-cat" style="color:${color}">${label}</span></div>
-        <div style="color:var(--muted)">No maintenance records available for this transformer on the main backend.</div>
-        <div class="risk-disclaimer">${escHtml(data.methodology_disclaimer)}</div>
-      </div>`;
-      source.textContent = data.policy_version;
-      return;
-    }
-
-    let html = `<div class="risk-body">`;
-    html += `<div class="risk-header">`;
-    html += data.maintenance_risk_index != null ? `<span class="risk-score" style="color:${color}">${data.maintenance_risk_index.toFixed(1)}</span>` : "";
-    html += `<span class="risk-cat" style="color:${color}">${label}</span>`;
+    $("risk-source").textContent = data.maintenance_risk_index != null ? `${data.maintenance_risk_index.toFixed(1)} · ${label}` : label;
+    let html = `<div class="risk-body"><div class="risk-header">`;
+    if (data.maintenance_risk_index != null) html += `<span class="risk-score" style="color:${color}">${data.maintenance_risk_index.toFixed(1)}</span>`;
+    html += `<span class="risk-cat" style="color:${color}">${esc(label)}</span>`;
+    if (data.records_considered) html += `<span class="risk-count">${data.fault_events_considered} faults / ${data.records_considered} checks</span>`;
     html += `</div>`;
-
-    if (data.contributing_factors && data.contributing_factors.length) {
-      html += `<div class="risk-factors">`;
-      data.contributing_factors.forEach((f) => {
-        const score = f.available && f.score != null ? f.score.toFixed(1) : "—";
-        html += `<span class="label">${f.name.replaceAll("_", " ")}</span><span class="score">${score}</span><span class="weight">${(f.weight).toFixed(0)}%</span>`;
-      });
-      html += `</div>`;
+    if (!data.records_considered) html += `<div>No maintenance checks up to the cursors.</div>`;
+    (data.contributing_factors || []).forEach((f) => {
+      const score = f.available && f.score != null ? f.score.toFixed(1) : "—";
+      html += `<details class="risk-factor-detail"${f.available ? "" : ' style="opacity:.5"'}>`;
+      html += `<summary><span class="label">${esc(f.name.replaceAll("_", " "))}</span><span class="score">${score}</span><span class="weight">${f.weight.toFixed(0)}%</span></summary><div class="factor-evidence">`;
+      if (f.explanation || f.method) html += `<div class="method">${esc(f.explanation || f.method)}</div>`;
+      if (f.unavailable_reason) html += `<div style="color:var(--warning)">Unavailable: ${esc(f.unavailable_reason)}</div>`;
+      if (f.evidence && f.evidence.length) {
+        html += `<table><tr><th>Check</th><th>Monitor</th><th>Signal</th><th>Date</th></tr>`;
+        f.evidence.forEach((e) => { html += `<tr><td>#${esc(e.check_no || "—")}</td><td>${esc(e.iot_name || "—")}</td><td>${esc(e.signal || "—")}</td><td>${esc(e.date || "—")}</td></tr>`; });
+        html += `</table>`;
+      }
+      if (f.signal_counts) html += `<div>Signals: ${Object.entries(f.signal_counts).map(([k, v]) => `${esc(k)} ×${v}`).join(", ")}</div>`;
+      if (f.iot_breakdown && f.iot_breakdown.length) html += `<div>Monitors: ${f.iot_breakdown.map((b) => `TB${b.timebar} ${esc(b.name)} ×${b.count}`).join(", ")}</div>`;
+      if (f.open_count != null) html += `<div>${f.open_count} open / ${f.total_count} total</div>`;
+      html += `</div></details>`;
+    });
+    if (data.recommendation) {
+      const r = data.recommendation;
+      html += `<div class="risk-recommendation"><strong>Recommended action:</strong> ${esc(r.action)}<br><span style="color:var(--muted)">Check #${esc(r.based_on_check)} · ${esc(r.signal)} · ${esc(r.iot_name || "")} · ${esc(r.date || "")}</span></div>`;
     }
-
-    if (data.review_flags && data.review_flags.length) {
-      html += `<div class="risk-flags">`;
-      data.review_flags.forEach((f) => { html += `<div class="risk-flag">${escHtml(f.detail)}</div>`; });
-      html += `</div>`;
-    }
-
-    html += `<div class="risk-disclaimer">`;
-    html += escHtml(data.methodology_disclaimer);
-    if (!data.policy_approved) html += `<br>Policy status: unapproved (${escHtml(data.policy_version)})`;
-    html += `<br>Data source: main backend maintenance records (not twin_iot sensor readings)`;
-    html += `</div></div>`;
-
-    body.innerHTML = html;
-    source.textContent = data.policy_version;
+    // repeated flags are listed; single occurrences are only counted (each twin2 check carries its own flag)
+    const flags = data.review_flags || [];
+    flags.filter((f) => f.code !== "TREND_FLAG" || f.occurrences > 1).forEach((f) => { html += `<div class="risk-flag">${esc(f.detail || f.flag)}</div>`; });
+    const single = flags.filter((f) => f.code === "TREND_FLAG" && f.occurrences === 1).length;
+    if (single) html += `<div class="risk-flag" style="color:var(--muted)">${single} other flag${single > 1 ? "s" : ""} raised once.</div>`;
+    if (data.methodology_disclaimer) html += `<div class="risk-disclaimer">${esc(data.methodology_disclaimer)}</div>`;
+    $("risk-body").innerHTML = html + `</div>`;
   }
 
-  // ---------- initial data load ----------------------------------------------------------------
-  fetch(`${API}/transformers`).then((r) => {
-    if (!r.ok) throw new Error(`HTTP ${r.status} from ${API}/transformers (is the twin_iot API running?)`);
-    return r.json();
-  }).then((list) => {
-    if (!list.length) { $("status").textContent = "No data: run scripts/simulate.py or drop a CSV"; return; }
-    return load(list[0].transformer_id).then(() => loadRisk(list[0].transformer_id));
-  }).catch((e) => { $("status").textContent = "API unavailable: " + e.message; });
+  // maintenance popups: one playback state per timebar; positions are the minute / day indices
+  const ME = window.MaintEvents;
+  const sheets = { 1: [], 2: [] }, toastState = { 1: null, 2: null };
+  const byIndex = { at: (c) => c.index, maxToasts: 2 };
+  const pos = (tb) => (cursor ? (tb === 1 ? cursor.m : cursor.d) : -1);
+  function showToast(c) {
+    const box = $("maint-toasts");
+    const el = document.createElement("div");
+    el.className = "maint-toast"; el.dataset.no = c.check_no;
+    el.style.setProperty("--c", COLORS[c.signal] || "var(--accent)");
+    const when = c.timebar === 1 ? `${c.time_utc} UTC` : c.date;
+    el.innerHTML = `<div class="toast-head"><span class="toast-signal">${esc(c.signal.replaceAll("_", " "))}</span>
+      <span class="toast-title">#${c.check_no} ${esc(c.iot_name)}</span><button class="toast-dismiss" aria-label="Dismiss">&times;</button></div>
+      <div class="toast-body">Timebar ${c.timebar} · ${esc(when)} · ${esc(c.flag.replaceAll("_", " ").toLowerCase())}<div class="action-line">${esc(c.recommended_action)}</div></div>`;
+    const remove = () => { el.classList.add("fade-out"); setTimeout(() => el.remove(), 300); };
+    el.querySelector(".toast-dismiss").onclick = (e) => { e.stopPropagation(); remove(); };
+    el.onclick = () => { if (TimebarsApp.openCheck) TimebarsApp.openCheck(c.timebar, c.iot); remove(); };
+    box.prepend(el);
+    while (box.children.length > 4) box.lastChild.remove();
+    setTimeout(remove, 12000);
+  }
+  function stepToasts() {
+    for (const tb of [1, 2]) {
+      if (!toastState[tb]) continue;
+      const r = ME.step(toastState[tb], sheets[tb], pos(tb), byIndex);
+      toastState[tb] = r.state;
+      r.retract.forEach((no) => document.querySelectorAll(`.maint-toast[data-no="${no}"]`).forEach((x) => x.remove()));
+      r.toasts.forEach(showToast);
+    }
+  }
+  if (ME) fetch("/api/twin2/sheet").then((r) => r.json()).then((data) => {
+    for (const tb of [1, 2]) {
+      sheets[tb] = data.checks.filter((c) => c.timebar === tb);
+      toastState[tb] = ME.step(ME.initial(), sheets[tb], pos(tb), byIndex).state;   // no popups for what is already on screen
+    }
+  }).catch(() => {});
+
+  const onCursor = (c) => { cursor = c; scheduleRisk(); if (ME) stepToasts(); };
+
+  // the two timebars drive the cards, the signal list, the graphs, the 3D model, the assistant, risk and popups
+  TimebarsApp.start({ twin, onCursor }).catch((e) => { $("status").textContent = "API unavailable: " + e.message; });
 })();
 </script>
 </body>

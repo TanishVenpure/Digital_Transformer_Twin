@@ -3,7 +3,7 @@
  *
  * Model, sensor placement and lighting come from the team's FRONTEND branch
  * (frontend/index.html + transformer.glb, built in Blender). Here the sensors are driven by
- * the seven IoT statuses of the current timeline hour instead of the page's own simulation.
+ * the IoT statuses of the current timeline hour instead of the page's own simulation.
  *
  *   base model      : every sensor shown in its status colour, camera on the whole transformer
  *   IoT n signalled : the camera flies to IoT n's sensors, they glow in the signal colour and
@@ -48,7 +48,10 @@
     const say = opts.onStatus || (() => {});
     const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
     const sensors = SENSORS.map(s => Object.assign({}, s, { s: 'NONE' }));
-    const api = { ready: false, setStatuses, focus, resetView, toggleSpin, setMode, setOil, setLabels, explode, get t() { return t; } };
+    const api = { ready: false, setStatuses, focus, resetView, toggleSpin, setMode, setOil, setLabels, explode, pan, move, zoom, release, get t() { return t; }, get manual() { return manual; } };
+    const onManual = opts.onManual || (() => {});
+    // manual = the user is navigating; automatic IoT focus pauses until Reset view
+    let manual = false;
     const onExplode = opts.onExplode || (() => {});
     let statuses = [], focusSlot = null;
     // explode / tank-view state
@@ -58,7 +61,7 @@
 
     if (!root.THREE || !THREE.GLTFLoader) { say('3D viewer could not load'); return api; }
 
-    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
     renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
     renderer.outputEncoding = THREE.sRGBEncoding;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
@@ -68,11 +71,14 @@
     container.prepend(renderer.domElement);
 
     const scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x0f1419);
+    scene.background = new THREE.Color(0x000000);
     const camera = new THREE.PerspectiveCamera(35, 16 / 10, 0.05, 100);
     const controls = new THREE.OrbitControls(camera, renderer.domElement);
     controls.enableDamping = true;
     controls.autoRotateSpeed = 0.8;
+    controls.screenSpacePanning = true;   // up/down drags move the view vertically
+    controls.panSpeed = 1.1;
+    controls.zoomSpeed = 1.1;
     if (THREE.RoomEnvironment) {
       const pmrem = new THREE.PMREMGenerator(renderer);
       scene.environment = pmrem.fromScene(new THREE.RoomEnvironment(), 0.04).texture;
@@ -133,7 +139,7 @@
     function lerpHome(k) { const h = homeAt(k); controls.target.copy(h.target); camera.position.copy(h.pos); }
     function explode(goal, animate) {
       if (!api.ready) return;
-      follow = true; fly = null;   // exploding shows the whole model, as on the FRONTEND page
+      if (!manual) { follow = true; fly = null; }   // exploding shows the whole model (unless the user is navigating)
       if (!animate || reduce) { tAnim = null; setT(goal); return; }
       const from = t, t0 = performance.now(), ms = 2800 * Math.max(Math.abs(goal - from), 0.15);
       tAnim = now => {
@@ -238,13 +244,45 @@
         if (k >= 1) fly = null;
       };
     }
-    function resetView() { if (!homes.a) return; follow = true; const h = homeAt(t); flyBetween(h.target, h.pos); }
+    function resetView() { if (!homes.a) return; if (manual) { manual = false; onManual(false); } follow = true; const h = homeAt(t); flyBetween(h.target, h.pos); }
+
+    // ---- free navigation: pan (left/right/up/down), move (forward/back through the model), zoom
+    function takeControl() {
+      fly = null; follow = false;
+      if (!manual) { manual = true; onManual(true); }
+    }
+    const tmp = new THREE.Vector3(), right = new THREE.Vector3(), up = new THREE.Vector3();
+    function step() { return Math.max(0.03, camera.position.distanceTo(controls.target) * 0.05); }
+    function pan(dx, dy) {               // screen-space: +x right, +y up
+      takeControl();
+      camera.updateMatrixWorld();
+      right.setFromMatrixColumn(camera.matrixWorld, 0);
+      up.setFromMatrixColumn(camera.matrixWorld, 1);
+      tmp.copy(right).multiplyScalar(dx * step()).addScaledVector(up, dy * step());
+      camera.position.add(tmp); controls.target.add(tmp);
+    }
+    function move(d) {                   // forward (+) / back (-): camera and target travel together
+      takeControl();
+      tmp.subVectors(controls.target, camera.position).normalize().multiplyScalar(d * Math.max(0.05, step()));
+      camera.position.add(tmp); controls.target.add(tmp);
+    }
+    function release() {                 // hand the camera back to the automatic IoT focus
+      if (manual) { manual = false; onManual(false); }
+      lastMove = -Infinity;
+    }
+    function zoom(f) {                   // f < 1 closer, > 1 further, orbit point fixed
+      takeControl();
+      const dist = camera.position.distanceTo(controls.target);
+      const next = Math.min(controls.maxDistance, Math.max(controls.minDistance, dist * f));
+      tmp.subVectors(camera.position, controls.target).setLength(next);
+      camera.position.copy(controls.target).add(tmp);
+    }
     function toggleSpin() { controls.autoRotate = !controls.autoRotate; return controls.autoRotate; }
 
     // Base model = whole transformer; IoT model = camera centred on that IoT's sensors.
     // Colours and dimming follow every change at once; the camera moves at most once per
     // FOCUS_MS so fast playback does not make it chase every hour.
-    const FOCUS_MS = 1500;
+    const FOCUS_MS = 3000;
     let lastMove = -Infinity, moveTimer = null, introUntil = 0;
     function focus(slot) {
       focusSlot = slot || null;
@@ -258,6 +296,7 @@
       moveCamera();
     }
     function moveCamera() {
+      if (manual) return;   // the user is navigating; Reset view hands control back
       // exploded = inspection mode: keep the whole model in view; highlighting still applies
       if (!focusSlot || t > 0.05) return resetView();
       follow = false;
@@ -287,6 +326,7 @@
         if (/Radiator_Left/.test(nm)) { o.material = o.material.clone(); radL.push(o); }
         if (/IoT_RAD_/.test(nm)) radPucks.push(o);
       });
+      if (window.TwinMaterials) TwinMaterials.dress(model);   // steel outside, aged copper windings (metal.js)
       scene.add(model);
 
       // camera homes for the assembled (a) and fully exploded (e) poses
@@ -316,13 +356,23 @@
     }, undefined, () => say('The 3D model could not load'));
 
     controls.addEventListener('start', () => { fly = null; follow = false; });
+    // dragging to pan (right button, or shift/ctrl + left) or wheel zoom counts as manual navigation
+    renderer.domElement.addEventListener('pointerdown', (e) => { if (e.button === 2 || e.shiftKey || e.ctrlKey || e.metaKey) takeControl(); });
+    renderer.domElement.addEventListener('wheel', () => takeControl(), { passive: true });
+    renderer.domElement.addEventListener('contextmenu', (e) => e.preventDefault());
 
     function size() {
       const w = container.clientWidth, h = container.clientHeight;
       if (!w || !h) return;
-      renderer.setSize(w, h, false); camera.aspect = w / h; camera.updateProjectionMatrix();
+      renderer.setSize(w, h, false); camera.aspect = w / h;
+      // opts.offsetY(w, h): shift the picture up by this many px, e.g. to centre the model
+      // in the space left free by panels drawn over the canvas.
+      const oy = opts.offsetY ? Math.round(opts.offsetY(w, h)) : 0;
+      if (oy) camera.setViewOffset(w, h, 0, oy, w, h); else camera.clearViewOffset();
+      camera.updateProjectionMatrix();
     }
     new ResizeObserver(size).observe(container); size();
+    api.resize = size;
 
     const v3 = new THREE.Vector3();
     function placeChips(now) {
@@ -339,7 +389,8 @@
         s.chip.style.transform = `translate(${(v3.x * 0.5 + 0.5) * w}px, ${(-v3.y * 0.5 + 0.5) * h}px) translate(-50%, calc(-100% - 8px))`;
         const dim = focusSlot && !s.slots.includes(focusSlot);
         s.chip.classList.toggle('dim', !!dim);
-        const pulse = s.s === 'CRITICAL' && !reduce ? 1 + 0.45 * Math.sin(now / 160) : RANK[s.s] > 0 ? 1.15 : 1;
+        // slow, gentle breathing (one cycle every ~2.5 s), not a strobe
+        const pulse = s.s === 'CRITICAL' && !reduce ? 1.1 + 0.15 * Math.sin(now / 400) : RANK[s.s] > 0 ? 1.15 : 1;
         s.glow.scale.setScalar((dim ? 0.04 : 0.09) * pulse);
         s.glow.material.opacity = dim ? 0.15 : 0.9;
       }
