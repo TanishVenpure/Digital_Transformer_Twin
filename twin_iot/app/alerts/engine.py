@@ -114,6 +114,13 @@ class AlertEngine:
                 details[check.threshold_detail] = check.threshold
             if check.condition_detail:
                 details[check.condition_detail] = check.trigger_condition if crossed else ("NORMAL" if enabled and detail is not None else None)
+            if crossed and check.signal == Signal.WARNING and check.suppress_when_critical:
+                crossed = not any(
+                    other.signal == Signal.CRITICAL and other.detail == check.detail
+                    and other.threshold is not None and other.unit is not None
+                    and self.compare(detail, other.threshold, other.operator)
+                    for other in rule.extra_checks
+                )
             if crossed:
                 triggered.append((check.signal, detail, check.threshold, check.operator, check.unit,
                                   check.message, check.trigger_condition))

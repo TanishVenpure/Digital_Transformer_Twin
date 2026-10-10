@@ -74,8 +74,8 @@ class ProcessingService:
         for name, formula in self.registry.all().items():
             rule = self.thresholds[name]
             key = (transformer_id, name)
-            previous = self._previous.get(key) if formula.predictive else None
-            if (formula.predictive and previous is None and self.history_loader
+            previous = self._previous.get(key) if formula.predictive or rule.suppress_repeated_alerts else None
+            if ((formula.predictive or rule.suppress_repeated_alerts) and previous is None and self.history_loader
                     and all(feature in data for feature in formula.required_features)):
                 previous = self.history_loader(transformer_id, name, timestamp)
                 if previous is not None:
@@ -92,6 +92,19 @@ class ProcessingService:
                 result=result, rule=rule, transformer_id=transformer_id, timestamp=timestamp,
                 formula_inputs={feature: data[feature] for feature in features if feature in data},
             )
+            # Keep every evaluation; emit only newly entered/escalated alert conditions.
+            # Compare the previous persisted/cached observation, including after restart.
+            current = evaluations[name]
+            if rule.suppress_repeated_alerts and previous is not None and current.alerts:
+                prior_result = formula.evaluate(previous.data, FormulaContext(parameters=rule.parameters))
+                prior = self.alert_engine.evaluate(
+                    formula_name=name, display_name=formula.display_name, parameter=formula.parameter,
+                    result=prior_result, rule=rule, transformer_id=transformer_id,
+                    timestamp=previous.timestamp, formula_inputs=previous.data,
+                )
+                prior_keys = {(a.signal, a.details.get("trigger_condition")) for a in prior.alerts}
+                current.alerts = [a for a in current.alerts
+                                 if (a.signal, a.details.get("trigger_condition")) not in prior_keys]
         return evaluations
 
     def receive_reading(self, transformer_id: str, timestamp: datetime, data: dict[str, Any]) -> dict[str, IoTEvaluation]:

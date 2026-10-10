@@ -6,13 +6,13 @@ from app.simulation.degradation_source import MONITORS, generate
 START = datetime(2026, 7, 1, tzinfo=timezone.utc)
 
 
-def test_every_monitor_degrades_to_critical_and_is_repaired():
+def test_demo_degradation_and_supplied_loading_thresholds():
     readings, repairs = generate(start=START, days=90, seed=7, invalid_rate=0)
     service = ProcessingService()
     seen = {slot: set() for slot in range(1, 8)}
     for timestamp, data in readings:
         for e in service.process("T1", timestamp, data).evaluations.values():
-            if e.iot_slot == 8:
+            if e.iot_slot in (4, 8, 9):
                 assert e.evaluation_status == "SKIPPED" and not e.alerts
             else:
                 seen[e.iot_slot].add(e.status)
@@ -21,7 +21,14 @@ def test_every_monitor_degrades_to_critical_and_is_repaired():
     assert repairs["current"] == []   # load follows demand; it is managed, never "repaired"
     assert repairs["voltage"] == []   # supply voltage is external; nothing to repair
     for slot, statuses in seen.items():
+        if slot == 4:
+            assert not statuses  # legacy inputs do not identify the voltage side
+            continue
         assert "NORMAL" in statuses
+        if slot == 3:
+            # Preserved demo demand crosses 110%, but not the supplied 120% trip limit.
+            assert "WARNING" in statuses and "CRITICAL" not in statuses
+            continue
         if slot == 6:   # top-oil: radiators are cleaned on cooling condition, so the trip is never reached
             assert "CRITICAL" not in statuses, statuses
             continue

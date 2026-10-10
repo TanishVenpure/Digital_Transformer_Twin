@@ -30,3 +30,11 @@ features:
 
   # IOT8: finite measured pressure; physical unit and bounds are not yet supplied.
   oil_pressure: {min: null, max: null, unit: unconfigured}
+
+  # RMS voltage channels: explicit side; no guessed upper physical bound.
+  lv_voltage_r: {min: 0, max: null, unit: V}
+  lv_voltage_y: {min: 0, max: null, unit: V}
+  lv_voltage_b: {min: 0, max: null, unit: V}
+  hv_voltage_r: {min: 0, max: null, unit: V}
+  hv_voltage_y: {min: 0, max: null, unit: V}
+  hv_voltage_b: {min: 0, max: null, unit: V}

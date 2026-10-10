@@ -14,7 +14,7 @@ DEMO = Path(__file__).resolve().parents[1] / "data" / "examples" / "escalation_d
 
 def test_every_iot_has_a_unique_slot(thresholds):
     assert set(thresholds) == set(formula_registry.all())
-    assert sorted(rule.iot_slot for rule in thresholds.values()) == list(range(1, 9))
+    assert sorted(rule.iot_slot for rule in thresholds.values()) == list(range(1, 10))
 
 
 def test_warning_beyond_critical_is_rejected():
@@ -52,13 +52,16 @@ def test_partial_reading_skips_unavailable_iots():
     assert all(e.status is None for name, e in evaluations.items() if name != "oil_level")
 
 
-def test_demo_csv_ends_with_every_transformer_iot_critical():
+def test_demo_csv_preserves_other_critical_rules_with_revised_loading():
     readings = list(read_csv(DEMO))
     results = ProcessingService(load_thresholds()).replay(readings)
     assert all(r.accepted and all(i.code == "MISSING" for i in r.issues) for r in results)
     assert all(e.status == "NORMAL" for name, e in results[0].evaluations.items()
-               if name != "transformer_pressure_monitoring")
+               if name not in ("transformer_pressure_monitoring", "voltage_deviation", "hv_voltage_deviation"))
     assert all(r.evaluations["transformer_pressure_monitoring"].evaluation_status == "SKIPPED" for r in results)
     final = results[-1].evaluations
-    for name in ("current_loading", "voltage_deviation", "oil_level", "top_oil_temperature", "winding_temperature"):
+    for name in ("oil_level", "top_oil_temperature", "winding_temperature"):
         assert final[name].status == "CRITICAL"
+
+    # Legacy demo currents are below the newly supplied 110% warning; do not alter source data.
+    assert final["current_loading"].status == "NORMAL"

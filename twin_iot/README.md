@@ -274,3 +274,39 @@ Before/after SHA-256 snapshots of all five live demo tables matched exactly:
 1,321 maintenance checks, and 20 performed-maintenance events. No historical
 pressure values or evaluations were inserted. PostgreSQL tests used disposable
 schemas that were removed after each test.
+
+## Revised LV current overload rule
+
+`current_loading` uses supplied 633 kVA / 433 V line-to-line LV ratings:
+`I_rated = 633000 / (sqrt(3) * 433) = approximately 844.024758 A`.
+Each R/Y/B phase loading is `abs(current) / I_rated * 100`; the largest phase decides.
+At 110% loading raise `OVERLOAD_WARNING`; at 120% raise `TRIP_ALERT` instead of a
+warning. Both comparisons are inclusive and use unrounded calculations. Existing
+severity values remain WARNING / CRITICAL; trigger identities are in stored details.
+Both belong to TRANSFORMER_MAINTENANCE. Trip is an alert only, with no breaker control.
+The old prediction lead time is disabled. All phase loadings, source currents and
+nameplate inputs are retained in diagnostics. Existing demo data and past evaluations
+are unchanged; incoming readings use the revised configuration.
+
+## HV/LV RMS voltage monitors
+
+LV remains slot 4 (`voltage_deviation`); HV is slot 9 (`hv_voltage_deviation`).
+Use explicit `lv_voltage_r/y/b` and `hv_voltage_r/y/b` RMS channels in volts.
+Legacy `voltage_r/y/b` data is not silently assigned to a transformer side.
+Supplied line-to-line nameplate ratings: LV 433 V, HV 11000 V.
+Set each rule's `parameters.measurement_type` to `LINE_TO_LINE` or
+`PHASE_TO_NEUTRAL` once the sensor output is confirmed. Until then evaluations
+are SKIPPED, not normal or flagged. Phase-to-neutral reference is rated LL / sqrt(3).
+Signed deviation is (measured - nominal) / nominal * 100 for every R/Y/B channel.
+HV: over warning >=3%, trip >=6%; under warning >=5%, trip >=9% in magnitude.
+LV: over/under warning >=3%, trip >=6% in magnitude. Thresholds are inclusive.
+Trips suppress the warning for that direction. Opposite-direction breaches remain
+independent. Details preserve per-channel voltages, signed deviations, direction,
+side and exact trigger receipts. Existing severity WARNING/CRITICAL is retained.
+All actual alerts use TRANSFORMER_MAINTENANCE and the common alert history.
+There is no timer, breaker control, averaging, or forecast for these voltage rules.
+Current and voltage rules evaluate each reading with millisecond timestamps;
+unchanged breaches keep evaluations but do not repeatedly emit alerts. Recovery
+allows a new breach alert; persisted prior readings restore this state after restart.
+A 20 ms cadence needs 50 RMS updates/second; sustained database throughput has
+not been benchmarked. Existing hourly demo data and old stored history are unchanged.

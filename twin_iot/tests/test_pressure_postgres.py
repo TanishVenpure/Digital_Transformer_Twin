@@ -138,11 +138,12 @@ def test_old_timeline_rows_are_padded_without_backfill(api_db):
     client, main, connect = api_db
     from app.twin3d.selector import select_model
     processed = main.live_service.process("T1", NOW, {"oil_level": 80})
-    processed.evaluations.pop(NAME)  # emulate a row stored before Rule 8 existed
+    processed.evaluations.pop(NAME)  # emulate a row stored before Rules 8/9 existed
+    processed.evaluations.pop("hv_voltage_deviation")
     with connect() as connection:
         rid = db.store(connection, processed, select_model(processed.evaluations, main.models))
     timeline = client.get("/api/timeline/T1").json()
-    assert len(timeline["iots"]) == 8 and len(timeline["frames"][0]["v"]) == 8
+    assert len(timeline["iots"]) == 9 and len(timeline["frames"][0]["v"]) == 9
     frame = timeline["frames"][0]
     assert frame["v"][7] is None and frame["s"][7] is None and "8" not in frame["d"]
     with connect() as connection, connection.cursor() as cursor:

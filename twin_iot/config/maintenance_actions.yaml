@@ -6,14 +6,14 @@ actions:
   voltage_measurement_health:
     MAINTENANCE_REQUIRED: "Inspect and recalibrate the voltage sensor (PT) against a reference meter."
   current_loading:
-    WARNING: "Review loading; plan load transfer if current keeps approaching rated value."
+    WARNING: "Review LV phase loading; consider load balancing or load transfer after the 110% warning."
     PREDICTED_MAINTENANCE: "Schedule load management before current reaches rated value."
-    CRITICAL: "Reduce load immediately; inspect transformer for overload damage."
+    CRITICAL: "Trip alert: notify the operator that LV loading reached the 120% setting; investigate overload. No automatic switching."
     LOAD_GROWTH: "Demand is growing: confirm against the same season last year, then plan load transfer to a neighbouring transformer, phase balancing or a capacity upgrade before peaks exceed rating regularly."
   voltage_deviation:
-    WARNING: "Check tap position and supply voltage regulation."
+    WARNING: "Review the affected LV RMS voltage channel and supply regulation."
     PREDICTED_MAINTENANCE: "Schedule tap-changer / regulation check before the voltage band is breached."
-    CRITICAL: "Inspect tap changer and supply; isolate if voltage stays outside limits."
+    CRITICAL: "LV voltage trip alert: notify the operator and investigate voltage deviation. No automatic switching."
   oil_level:
     WARNING: "Inspect for oil leaks and plan an oil top-up."
     PREDICTED_MAINTENANCE: "Schedule leak repair and oil top-up before minimum level is reached."
@@ -35,3 +35,7 @@ actions:
     WARNING: "Inspect the measured transformer pressure and pressure instrumentation."
     CRITICAL: "Investigate the critical pressure or rapid pressure rise condition."
     MAINTENANCE_REQUIRED: "Investigate the critical pressure or rapid pressure rise condition."
+
+  hv_voltage_deviation:
+    WARNING: "Review the affected HV RMS voltage channel and supply regulation."
+    CRITICAL: "HV voltage trip alert: notify the operator and investigate supply voltage. No automatic switching."

@@ -17,7 +17,7 @@ class ModelSpec(BaseModel):
     blend_file: str
     export_file: str
     focus_nodes: list[str] = Field(default_factory=list)
-    iot_slot: int | None = Field(default=None, ge=1, le=8)
+    iot_slot: int | None = Field(default=None, ge=1, le=9)
 
 
 class ModelsConfig(BaseModel):
@@ -30,8 +30,8 @@ class ModelsConfig(BaseModel):
         if BASE_MODEL not in self.models:
             raise ValueError("A base model is required")
         slots = sorted(spec.iot_slot for spec in self.models.values() if spec.iot_slot is not None)
-        if slots != list(range(1, 9)):
-            raise ValueError("Exactly one model is required for each IoT slot 1..8")
+        if slots != list(range(1, 10)):
+            raise ValueError("Exactly one model is required for each IoT slot 1..9")
         return self
 
     def for_slot(self, slot: int) -> str:

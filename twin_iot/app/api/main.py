@@ -59,7 +59,8 @@ def list_transformers() -> list[dict]:
 def list_iots() -> list[dict]:
     return [
         {"slot": rule.iot_slot, "name": name, "display_name": formula_registry.get(name).display_name,
-         "unit": rule.unit or "unconfigured", "operator": rule.operator, "warning": rule.warning, "critical": rule.critical}
+         "unit": rule.unit or "unconfigured", "operator": rule.operator, "warning": rule.warning, "critical": rule.critical, "extra_checks": [c.model_dump(mode="json") for c in rule.extra_checks],
+         "required_features": list(formula_registry.get(name).required_features), "parameters": rule.parameters}
         for name, rule in sorted(live_service.thresholds.items(), key=lambda item: item[1].iot_slot)
     ]
 

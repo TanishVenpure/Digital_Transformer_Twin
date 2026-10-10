@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -22,12 +22,13 @@ class ExtraCheck(BaseModel):
     trigger_condition: str | None = None
     condition_detail: str | None = None
     threshold_detail: str | None = None
+    suppress_when_critical: bool = False
     unit_detail: str | None = None  # comparison requires the calculated detail to use this unit
 
 
 class IoTRule(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    iot_slot: int = Field(ge=1, le=8)
+    iot_slot: int = Field(ge=1, le=9)
     operator: Operator
     unit: str | None = Field(default=None, min_length=1)
     warning: float | None = Field(default=None, allow_inf_nan=False)
@@ -45,10 +46,11 @@ class IoTRule(BaseModel):
     critical_detail: str | None = None
     critical_message: str = Field(min_length=1)
     predicted_message: str | None = None
-    parameters: dict[str, float] = Field(default_factory=dict)
+    parameters: dict[str, Any] = Field(default_factory=dict)
     extra_checks: list[ExtraCheck] = Field(default_factory=list)
     # False = monitored for quality only (alerts + status), never written to the maintenance sheet
     maintenance_sheet: bool = True
+    suppress_repeated_alerts: bool = False
 
     @property
     def worse_when_higher(self) -> bool:

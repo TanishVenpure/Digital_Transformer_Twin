@@ -521,11 +521,12 @@
     1: { name: "Current Sensor", metric: "Instrument error vs reference", group: "precision", fmt: (v) => [v.toFixed(2), "%"] },
     2: { name: "Voltage Sensor", metric: "Instrument error vs reference", group: "precision", fmt: (v) => [v.toFixed(2), "%"] },
     3: { name: "Current", metric: "Load, % of rated current", group: "transformer", fmt: (v) => [v.toFixed(1), "%"] },
-    4: { name: "Voltage", metric: "Supply deviation (external grid)", group: "transformer", fmt: (v) => ["±" + v.toFixed(1), "%"] },
+    4: { name: "LV Voltage", metric: "LV RMS voltage deviation", group: "transformer", fmt: (v) => ["±" + v.toFixed(1), "%"] },
     5: { name: "Oil Level", metric: "Conservator gauge", group: "transformer", fmt: (v) => [v.toFixed(1), "%"] },
     6: { name: "Top-Oil Temperature", metric: "Top-oil, absolute", group: "transformer", fmt: (v) => [v.toFixed(1), "°C"] },
     7: { name: "Winding Temperature", metric: "Hottest phase rise over ambient", group: "transformer", fmt: (v) => [v.toFixed(1), "K"] },
     8: { name: "Transformer Pressure", metric: "Measured oil pressure · unit unconfigured", group: "transformer", fmt: (v) => [v.toFixed(2), ""] },
+    9: { name: "HV Voltage", metric: "HV RMS voltage deviation", group: "transformer", fmt: (v) => [v.toFixed(2), "%"] },
   };
   // Trend flags from the backend's analytics (shown when the timeline response carries them).
   const TREND_FLAGS = {

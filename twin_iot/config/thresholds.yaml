@@ -29,32 +29,67 @@ formulas:
     iot_slot: 3
     operator: ">="
     unit: percent_of_rated
-    warning: 90.0              # EXAMPLE warning limit
-    critical: 100.0            # rated current
-    lead_time_hours: 24.0      # EXAMPLE
+    warning: 110.0             # supplied overload warning setting, inclusive
+    critical: 120.0            # supplied trip-alert setting, inclusive
+    lead_time_hours: null      # instantaneous thresholds; no prediction alert
     maintenance_type: TRANSFORMER_MAINTENANCE
-    warning_message: "Transformer current is approaching rated current."
-    critical_message: "Transformer current reached or exceeded rated current."
-    predicted_message: "Transformer current is predicted to exceed rated current within the lead time."
+    warning_when_critical: false
+    suppress_repeated_alerts: true
+    warning_trigger_condition: OVERLOAD_WARNING
+    critical_trigger_condition: TRIP_ALERT
+    condition_detail: overload_condition
+    warning_message: "LV current loading reached or exceeded the 110% overload warning setting."
+    critical_message: "LV current loading reached or exceeded the 120% permitted limit; trip alert only."
     parameters:
-      rated_current: 841.0     # A, LV side of the 630 kVA example transformer
+      rated_kva: 633.0         # supplied transformer nameplate capacity
+      rated_voltage_ll: 433.0  # V, supplied LV rated line-to-line voltage
 
   voltage_deviation:
     iot_slot: 4
     operator: ">="
     unit: percent_deviation
-    warning: 5.0               # +/-5 % prototype
-    critical: 10.0             # +/-10 % prototype
-    lead_time_hours: null      # no prediction: an external supply has no wear trend to extrapolate
+    warning: null
+    critical: null
+    lead_time_hours: null
     maintenance_type: TRANSFORMER_MAINTENANCE
-    warning_message: "Phase voltage deviates more than the warning band from nominal."
-    critical_message: "Phase voltage deviates more than the critical band from nominal."
-    predicted_message: "Voltage deviation is predicted to breach the critical band within the lead time."
-    # Supply voltage is set by the upstream grid: a deviation is a supply-quality event to report
-    # to the utility, not transformer maintenance, so it is kept out of the maintenance sheet.
-    maintenance_sheet: false
+    suppress_repeated_alerts: true
+    critical_message: "LV RMS voltage reached a trip setting; alert only."
     parameters:
-      nominal_voltage: 250.0   # V, EXAMPLE: phase-to-neutral of 433 V LV; match what the sensors measure
+      rated_voltage_ll: 433
+      measurement_type: null  # must confirm LINE_TO_LINE or PHASE_TO_NEUTRAL
+    extra_checks:
+      - detail: overvoltage_percent
+        operator: ">="
+        threshold: 3.0
+        unit: percent_deviation
+        signal: WARNING
+        suppress_when_critical: true
+        trigger_condition: OVERVOLTAGE_WARNING
+        message: "LV overvoltage reached the 3% warning setting."
+      - detail: overvoltage_percent
+        operator: ">="
+        threshold: 6.0
+        unit: percent_deviation
+        signal: CRITICAL
+        suppress_when_critical: true
+        trigger_condition: OVERVOLTAGE_TRIP_ALERT
+        message: "LV overvoltage reached the 6% trip alert setting."
+      - detail: undervoltage_percent
+        operator: ">="
+        threshold: 3.0
+        unit: percent_deviation
+        signal: WARNING
+        suppress_when_critical: true
+        trigger_condition: UNDERVOLTAGE_WARNING
+        message: "LV undervoltage reached the 3% warning setting."
+      - detail: undervoltage_percent
+        operator: ">="
+        threshold: 6.0
+        unit: percent_deviation
+        signal: CRITICAL
+        suppress_when_critical: true
+        trigger_condition: UNDERVOLTAGE_TRIP_ALERT
+        message: "LV undervoltage reached the 6% trip alert setting."
 
   oil_level:
     iot_slot: 5
@@ -128,3 +163,50 @@ formulas:
         condition_detail: rapid_pressure_condition
         threshold_detail: pressure_rise_rate_critical
         message: "Transformer pressure rise rate reached or exceeded the configured critical rate."
+
+  hv_voltage_deviation:
+    iot_slot: 9
+    operator: ">="
+    unit: percent_deviation
+    warning: null
+    critical: null
+    lead_time_hours: null
+    maintenance_type: TRANSFORMER_MAINTENANCE
+    suppress_repeated_alerts: true
+    critical_message: "HV RMS voltage reached a trip setting; alert only."
+    parameters:
+      rated_voltage_ll: 11000
+      measurement_type: null  # must confirm LINE_TO_LINE or PHASE_TO_NEUTRAL
+    extra_checks:
+      - detail: overvoltage_percent
+        operator: ">="
+        threshold: 3.0
+        unit: percent_deviation
+        signal: WARNING
+        suppress_when_critical: true
+        trigger_condition: OVERVOLTAGE_WARNING
+        message: "HV overvoltage reached the 3% warning setting."
+      - detail: overvoltage_percent
+        operator: ">="
+        threshold: 6.0
+        unit: percent_deviation
+        signal: CRITICAL
+        suppress_when_critical: true
+        trigger_condition: OVERVOLTAGE_TRIP_ALERT
+        message: "HV overvoltage reached the 6% trip alert setting."
+      - detail: undervoltage_percent
+        operator: ">="
+        threshold: 5.0
+        unit: percent_deviation
+        signal: WARNING
+        suppress_when_critical: true
+        trigger_condition: UNDERVOLTAGE_WARNING
+        message: "HV undervoltage reached the 5% warning setting."
+      - detail: undervoltage_percent
+        operator: ">="
+        threshold: 9.0
+        unit: percent_deviation
+        signal: CRITICAL
+        suppress_when_critical: true
+        trigger_condition: UNDERVOLTAGE_TRIP_ALERT
+        message: "HV undervoltage reached the 9% trip alert setting."

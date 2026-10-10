@@ -32,7 +32,7 @@ models:
     focus_nodes: [IoT_CT_A, IoT_CT_B, IoT_CT_C]
   iot4:
     iot_slot: 4
-    label: Voltage deviation
+    label: LV voltage deviation
     blend_file: models/transformer.blend   # source scene (bpy export pending)
     export_file: dashboard/transformer.glb
     focus_nodes: [LV_Lead_u, LV_Lead_v, LV_Lead_w]
@@ -61,3 +61,10 @@ models:
     blend_file: models/transformer.blend
     export_file: dashboard/transformer.glb
     focus_nodes: []  # no verified pressure sensor mapping; use the whole transformer
+
+  iot9:
+    iot_slot: 9
+    label: HV voltage deviation (sensor mapping unresolved)
+    blend_file: models/transformer.blend
+    export_file: dashboard/transformer.glb
+    focus_nodes: []

@@ -39,7 +39,7 @@ def evaluate(pressure, *, previous=None, hours=2, rule=None, optional=None):
 
 def test_registration_and_slot():
     registry = formula_registry.all()
-    assert len(registry) == 8 and len(set(registry)) == 8
+    assert len(registry) == 9 and len(set(registry)) == 9
     formula = registry[NAME]
     assert formula.required_features == ("oil_pressure",)
     assert formula.optional_features == ("top_oil_temperature", "ambient_temperature")
@@ -47,7 +47,7 @@ def test_registration_and_slot():
     rule = load_thresholds()[NAME]
     assert rule.iot_slot == 8 and rule.maintenance_type == "TRANSFORMER_MAINTENANCE"
     assert set(registry) - {NAME} == {"current_measurement_health", "voltage_measurement_health", "current_loading",
-                                      "voltage_deviation", "oil_level", "top_oil_temperature", "winding_temperature"}
+                                      "voltage_deviation", "hv_voltage_deviation", "oil_level", "top_oil_temperature", "winding_temperature"}
 
 
 def test_missing_pressure_skips_without_alert():
