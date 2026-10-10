@@ -1,10 +1,12 @@
 import logging
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 from sqlalchemy.exc import OperationalError, SQLAlchemyError
 
 from app.api import agent, alerts, data, health, maintenance, simulation, transformers
@@ -30,6 +32,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     application = FastAPI(title=settings.app_name, version=settings.app_version, lifespan=lifespan)
     application.state.settings = settings
     application.state.simulator = SimulationManager()
+    dashboard_dir = Path(__file__).resolve().parents[1] / "dashboard"
+    application.mount("/dashboard", StaticFiles(directory=dashboard_dir, html=True), name="dashboard")
     if settings.debug:
         application.add_middleware(
             CORSMiddleware,
