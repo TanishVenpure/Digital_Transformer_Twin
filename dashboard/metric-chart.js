@@ -332,7 +332,7 @@
       for (const e of w.repairs) {
         const x = X(Date.parse(e.ts));
         el('line', { x1: x, x2: x, y1: M.t, y2: M.t + PH, stroke: '#e8eef5', 'stroke-width': 1.5, 'stroke-dasharray': '2 3', opacity: 0.55 }, g);
-        el('circle', { cx: x, cy: M.t + PH - 10, r: 7, fill: '#0e131a', stroke: '#e8eef5', 'stroke-width': 1.5 }, g);
+        el('circle', { cx: x, cy: M.t + PH - 10, r: 7, fill: '#0b0f14', stroke: '#e8eef5', 'stroke-width': 1.5 }, g);
         const tx = el('text', { x, y: M.t + PH - 6.5, 'text-anchor': 'middle', class: 'wrench' }, g);
         tx.textContent = 'M';
       }
@@ -365,7 +365,7 @@
           el('line', { x1: X(tb), y1: Y(conv(r.trend_to.value)), x2: X(tEndLine), y2: Y(conv(vEnd)), stroke: '#e8eef5', 'stroke-width': 1.5, 'stroke-dasharray': '3 4', opacity: 0.8 }, g);
           if (tf <= w.domainEnd) {
             const fx = X(tf), fy = Y(conv(iot.critical));
-            el('circle', { cx: fx, cy: fy, r: 5, fill: '#0e131a', stroke: '#e8eef5', 'stroke-width': 2 }, g);
+            el('circle', { cx: fx, cy: fy, r: 5, fill: '#0b0f14', stroke: '#e8eef5', 'stroke-width': 2 }, g);
             const lbl = el('text', { x: fx, y: fy - 10, 'text-anchor': fx > M.l + PW - 120 ? 'end' : 'middle', class: 'cyc' }, g);
             lbl.textContent = 'peaks reach rated ~' + new Date(tf).toLocaleDateString(undefined, { day: 'numeric', month: 'short', timeZone: 'UTC' });
           }
@@ -448,7 +448,7 @@
         d += (pen ? 'L' : 'M') + X(p.t).toFixed(1) + ',' + Y(p[key]).toFixed(1);
         pen = true;
       }
-      el('path', { d, fill: 'none', stroke: '#38bdf8', 'stroke-width': 2, 'stroke-linejoin': 'round', 'stroke-linecap': 'round' }, g);
+      el('path', { d, fill: 'none', stroke: '#3fa7ff', 'stroke-width': 2, 'stroke-linejoin': 'round', 'stroke-linecap': 'round' }, g);
 
       // checks raised: markers in a lane along the top, coloured by signal
       const half = Math.max(1.5, Math.min(4, PW / Math.max(1, w.checks.length) / 2.5));
@@ -459,9 +459,9 @@
 
       // "now" = playback hour
       const nx = X(w.tEnd);
-      el('line', { x1: nx, x2: nx, y1: M.t - 4, y2: M.t + PH, stroke: '#38bdf8', 'stroke-width': 1, opacity: 0.6 }, g);
+      el('line', { x1: nx, x2: nx, y1: M.t - 4, y2: M.t + PH, stroke: '#3fa7ff', 'stroke-width': 1, opacity: 0.6 }, g);
       const last = w.pts[w.pts.length - 1];
-      if (last[key] != null) el('circle', { cx: nx, cy: Y(last[key]), r: 4.5, fill: '#38bdf8', stroke: '#0e131a', 'stroke-width': 2 }, g);
+      if (last[key] != null) el('circle', { cx: nx, cy: Y(last[key]), r: 4.5, fill: '#3fa7ff', stroke: '#0b0f14', 'stroke-width': 2 }, g);
 
       // status strip below the axis
       const sw = Math.max(1, PW / Math.max(1, (w.domainEnd - w.t0) / 3600e3));
@@ -482,7 +482,7 @@
         hover.innerHTML = '';
         const x = X(best.t);
         el('line', { x1: x, x2: x, y1: M.t, y2: M.t + PH, stroke: '#8d9bab', 'stroke-width': 1 }, hover);
-        if (best[key] != null) el('circle', { cx: x, cy: Y(best[key]), r: 5, fill: '#38bdf8', stroke: '#0e131a', 'stroke-width': 2 }, hover);
+        if (best[key] != null) el('circle', { cx: x, cy: Y(best[key]), r: 5, fill: '#3fa7ff', stroke: '#0b0f14', 'stroke-width': 2 }, hover);
         const [num, unit] = best.v == null ? ['—', ''] : m.fmt(best.v);
         const repair = w.repairs.find((e) => Math.abs(Date.parse(e.ts) - best.t) <= 3600e3);
         tip.innerHTML = `<time>${new Date(best.t).toISOString().slice(0, 16).replace('T', ' ')} UTC</time>

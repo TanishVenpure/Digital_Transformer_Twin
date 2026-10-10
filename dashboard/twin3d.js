@@ -21,7 +21,7 @@
  */
 (function (root) {
   'use strict';
-  const COL = { NORMAL: '#34d399', WARNING: '#fbbf24', PREDICTED_MAINTENANCE: '#a78bfa', MAINTENANCE_REQUIRED: '#fb923c', CRITICAL: '#f87171', NONE: '#4b5867' };
+  const COL = { NORMAL: '#3fb950', WARNING: '#d29922', PREDICTED_MAINTENANCE: '#a371f7', MAINTENANCE_REQUIRED: '#f0883e', CRITICAL: '#f85149', NONE: '#5c6773' };
   const RANK = { NONE: -1, NORMAL: 0, WARNING: 1, PREDICTED_MAINTENANCE: 2, MAINTENANCE_REQUIRED: 3, CRITICAL: 4 };
   const B = (x, y, z) => new THREE.Vector3(x, z, -y);   // Blender (Z up) -> three (Y up)
 
@@ -71,7 +71,7 @@
     container.prepend(renderer.domElement);
 
     const scene = new THREE.Scene();
-    scene.background = null;   // panel gradient shows through
+    scene.background = new THREE.Color(0x000000);
     const camera = new THREE.PerspectiveCamera(35, 16 / 10, 0.05, 100);
     const controls = new THREE.OrbitControls(camera, renderer.domElement);
     controls.enableDamping = true;
@@ -193,7 +193,7 @@
         if (!s.dev) {
           const box = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.045, 0.035), housing);
           const band = new THREE.Mesh(new THREE.BoxGeometry(0.062, 0.012, 0.037),
-            new THREE.MeshStandardMaterial({ color: 0x222222, emissive: 0x34d399, emissiveIntensity: 2 }));
+            new THREE.MeshStandardMaterial({ color: 0x222222, emissive: 0x3fb950, emissiveIntensity: 2 }));
           band.position.y = -0.012;
           s.mats = [band.material];
           g.add(box, band);
@@ -252,7 +252,7 @@
       if (!manual) { manual = true; onManual(true); }
     }
     const tmp = new THREE.Vector3(), right = new THREE.Vector3(), up = new THREE.Vector3();
-    function step() { return Math.max(0.03, camera.position.distanceTo(controls.target) * 0.06); }
+    function step() { return Math.max(0.03, camera.position.distanceTo(controls.target) * 0.05); }
     function pan(dx, dy) {               // screen-space: +x right, +y up
       takeControl();
       camera.updateMatrixWorld();
@@ -282,7 +282,7 @@
     // Base model = whole transformer; IoT model = camera centred on that IoT's sensors.
     // Colours and dimming follow every change at once; the camera moves at most once per
     // FOCUS_MS so fast playback does not make it chase every hour.
-    const FOCUS_MS = 1500;
+    const FOCUS_MS = 3000;
     let lastMove = -Infinity, moveTimer = null, introUntil = 0;
     function focus(slot) {
       focusSlot = slot || null;
@@ -326,6 +326,7 @@
         if (/Radiator_Left/.test(nm)) { o.material = o.material.clone(); radL.push(o); }
         if (/IoT_RAD_/.test(nm)) radPucks.push(o);
       });
+      if (window.TwinMaterials) TwinMaterials.dress(model);   // steel outside, aged copper windings (metal.js)
       scene.add(model);
 
       // camera homes for the assembled (a) and fully exploded (e) poses
@@ -363,9 +364,15 @@
     function size() {
       const w = container.clientWidth, h = container.clientHeight;
       if (!w || !h) return;
-      renderer.setSize(w, h, false); camera.aspect = w / h; camera.updateProjectionMatrix();
+      renderer.setSize(w, h, false); camera.aspect = w / h;
+      // opts.offsetY(w, h): shift the picture up by this many px, e.g. to centre the model
+      // in the space left free by panels drawn over the canvas.
+      const oy = opts.offsetY ? Math.round(opts.offsetY(w, h)) : 0;
+      if (oy) camera.setViewOffset(w, h, 0, oy, w, h); else camera.clearViewOffset();
+      camera.updateProjectionMatrix();
     }
     new ResizeObserver(size).observe(container); size();
+    api.resize = size;
 
     const v3 = new THREE.Vector3();
     function placeChips(now) {
@@ -382,7 +389,8 @@
         s.chip.style.transform = `translate(${(v3.x * 0.5 + 0.5) * w}px, ${(-v3.y * 0.5 + 0.5) * h}px) translate(-50%, calc(-100% - 8px))`;
         const dim = focusSlot && !s.slots.includes(focusSlot);
         s.chip.classList.toggle('dim', !!dim);
-        const pulse = s.s === 'CRITICAL' && !reduce ? 1 + 0.45 * Math.sin(now / 160) : RANK[s.s] > 0 ? 1.15 : 1;
+        // slow, gentle breathing (one cycle every ~2.5 s), not a strobe
+        const pulse = s.s === 'CRITICAL' && !reduce ? 1.1 + 0.15 * Math.sin(now / 400) : RANK[s.s] > 0 ? 1.15 : 1;
         s.glow.scale.setScalar((dim ? 0.04 : 0.09) * pulse);
         s.glow.material.opacity = dim ? 0.15 : 0.9;
       }
