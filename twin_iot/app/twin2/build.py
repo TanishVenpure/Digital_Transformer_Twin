@@ -207,7 +207,8 @@ def build(cfg: dict[str, Any] | None = None, out_dir: Path | None = None) -> dic
         "top_oil_expected": agg("top_oil_expected", mean), "top_oil_rise_measured": agg("top_oil_rise_measured", mean),
         "top_oil_rise_expected": agg("top_oil_rise_expected", mean),
         "hotspot": agg("hotspot_temperature_estimated", max), "wti": agg("wti", max),
-        "winding_measured": agg("winding_measured", mean), "winding_expected": agg("winding_expected", mean),
+        # same per-minute reduction (max) as hot spot and WTI, so lines that are equal second by second overlap
+        "winding_measured": agg("winding_measured", max), "winding_expected": agg("winding_expected", max),
         "residual": agg("winding_thermal_residual", mean), "ageing_rate": agg("relative_ageing_rate", mean),
         "ageing_hours": agg("equivalent_ageing_hours", max), "ageing_ratio": agg("ageing_ratio", max),
         "energized": [all(sec["energized"][m * 60:(m + 1) * 60]) for m in range(n_min)],

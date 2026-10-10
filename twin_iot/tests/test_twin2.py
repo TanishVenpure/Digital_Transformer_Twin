@@ -166,3 +166,10 @@ def test_out_of_service_is_consistent(payloads):
 def test_load_factor_keeps_the_overload_surge(payloads):
     s = payloads["timebar1"]["series"]
     assert max(x for x in s["load_factor"] if x) == pytest.approx(max(x for x in s["loading_max"] if x) / 100, rel=0.02)
+
+
+def test_measured_winding_is_never_drawn_below_the_hot_spot(payloads):
+    """The probe sits at the hot spot: equal when healthy, above it with a blocked duct (same per-minute max)."""
+    s = payloads["timebar1"]["series"]
+    pairs = [(w, h) for w, h in zip(s["winding_measured"], s["hotspot"]) if w is not None and h is not None]
+    assert pairs and min(w - h for w, h in pairs) > -0.5
