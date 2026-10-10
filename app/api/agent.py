@@ -5,7 +5,8 @@ import secrets
 from datetime import datetime, timezone
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Security
+from fastapi.security import APIKeyHeader
 from sqlalchemy.orm import Session
 
 from app.agent.backend_provider import BackendEvidenceProvider
@@ -22,6 +23,7 @@ from app.database.repository import Repository
 
 router = APIRouter(prefix="/agent", tags=["agent"])
 logger = logging.getLogger(__name__)
+agent_api_key = APIKeyHeader(name="X-Agent-API-Key", auto_error=False)
 
 
 # Scope items starting with "@" are permissions, never transformer IDs, so a
@@ -79,7 +81,7 @@ def _authenticate(request: Request, api_key: str | None) -> tuple[set[str], set[
 
 def require_agent_access(
     request: Request,
-    x_agent_api_key: str | None = Header(default=None),
+    x_agent_api_key: str | None = Security(agent_api_key),
 ) -> set[str]:
     """Authenticate the agent caller and authorize its transformer scope."""
     authorized_transformers, _permissions = _authenticate(request, x_agent_api_key)
@@ -97,7 +99,7 @@ def _require_scoped_permission(permission: str, denied: str):
     """
     def dependency(
         request: Request,
-        x_agent_api_key: str | None = Header(default=None),
+        x_agent_api_key: str | None = Security(agent_api_key),
     ) -> set[str]:
         authorized_transformers, permissions = _authenticate(request, x_agent_api_key)
         if permission not in permissions:
@@ -115,7 +117,7 @@ require_alert_management = _require_scoped_permission(ALERTS_PERMISSION, "Alert 
 
 def require_simulation_access(
     request: Request,
-    x_agent_api_key: str | None = Header(default=None),
+    x_agent_api_key: str | None = Security(agent_api_key),
 ) -> None:
     """Authorize the process-wide simulator; transformer scope never implies this."""
     _transformers, permissions = _authenticate(request, x_agent_api_key)
