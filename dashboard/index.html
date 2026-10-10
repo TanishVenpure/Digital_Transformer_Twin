@@ -662,7 +662,7 @@
     $("ticks").innerHTML = ticks.map((t) => `<span>${t}</span>`).join("");
     ["back", "play", "fwd", "tick", "speed"].forEach((id) => ($(id).disabled = false));
     const start = /t=(\d+)/.exec(location.hash);
-    state.pos = start ? Math.min(n - 1, Number(start[1])) : 0;
+    state.pos = start ? Math.min(n - 1, Number(start[1])) : n - 1;
     drawStrip();
     if (!chart && window.MetricChart) chart = MetricChart.create({ MONITORS, LABEL, COLOR, GROUP, getState: () => state });
     render(true);
@@ -751,7 +751,7 @@
     state.signalBusy = true;
     try {
       const res = await fetch(`${API}/twin3d/signal`, {
-        method: "POST", headers: writeHeaders({ "Content-Type": "application/json" }),
+        method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ reading_id: readingId, source: "timeline" }),
       }).then((r) => r.json());
       if (res.model_call) {
@@ -963,23 +963,11 @@
     try {
       const resp = await fetch(`${API}/assistant/chat`, {
         method: "POST",
-        headers: writeHeaders({ "Content-Type": "application/json" }),
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ transformer_id: transformerId, question }),
       });
       thinking.remove();
-      if (resp.status === 401) {
-        if (askForKey()) {
-          const retry = await fetch(`${API}/assistant/chat`, {
-            method: "POST",
-            headers: writeHeaders({ "Content-Type": "application/json" }),
-            body: JSON.stringify({ transformer_id: transformerId, question }),
-          });
-          if (!retry.ok) throw new Error((await retry.json()).detail || retry.statusText);
-          chatAddMsg(formatChatResponse(await retry.json()), "assistant");
-        } else {
-          chatAddMsg("Authentication required. Enter your API key when prompted.", "error");
-        }
-      } else if (resp.status === 502 || resp.status === 503) {
+      if (resp.status === 502 || resp.status === 503) {
         const body = await resp.json().catch(() => ({}));
         chatAddMsg(`Chatbot backend unavailable: ${escHtml(body.detail || "service not reachable")}`, "error");
       } else if (resp.status === 504) {
@@ -1014,13 +1002,7 @@
     body.innerHTML = `<div class="risk-unavailable">Loading risk assessment…</div>`;
     source.textContent = "";
     try {
-      const resp = await fetch(`${API}/assistant/risk?transformer_id=${encodeURIComponent(transformerId)}`, {
-        headers: writeHeaders(),
-      });
-      if (resp.status === 401) {
-        body.innerHTML = `<div class="risk-unavailable">API key required for risk assessment.</div>`;
-        return;
-      }
+      const resp = await fetch(`${API}/assistant/risk?transformer_id=${encodeURIComponent(transformerId)}`);
       if (resp.status === 502 || resp.status === 503) {
         const err = await resp.json().catch(() => ({}));
         body.innerHTML = `<div class="risk-unavailable">${escHtml(err.detail || "Risk backend unavailable")}</div>`;

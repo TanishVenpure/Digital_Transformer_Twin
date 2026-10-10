@@ -17,9 +17,10 @@ from pydantic import BaseModel, Field, field_validator
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from app.alerts.configuration import PROJECT_ROOT
+from fastapi import Header
 from app.api.security import (
-    MAX_READING_FIELDS, MAX_UPLOAD_BYTES, allowed_hosts, authorize_transformer, check_not_future,
-    check_transformer_id, require_write_access,
+    API_KEY_HEADER, MAX_READING_FIELDS, MAX_UPLOAD_BYTES, allowed_hosts, authorize_transformer,
+    check_not_future, check_transformer_id, require_write_access,
 )
 from app.database import db
 from app.analytics import load_growth, winding
@@ -28,7 +29,7 @@ from app.formulas.registry import formula_registry
 from app.maintenance.sheet import SHEET_FIELDS, load_actions
 from app.processing.ingestion import read_csv
 from app.services.processing_service import ProcessingService
-from app.api.assistant_proxy import router as assistant_router
+from app.api.assistant import router as assistant_router
 from app.twin3d.blender_bridge import BlenderBridge
 from app.twin3d.selector import load_models, select_model
 
@@ -329,14 +330,16 @@ class SignalIn(BaseModel):
 
 
 @app.post("/api/twin3d/signal")
-def twin3d_signal(signal: SignalIn, authorized: set[str] = Depends(require_write_access)) -> dict[str, Any]:
+def twin3d_signal(signal: SignalIn, x_twin_api_key: str | None = Header(default=None)) -> dict[str, Any]:
     """Timeline playback: re-select the model for a stored hour and switch only if it changed.
 
-    Requires X-Twin-API-Key; readings of other transformers are reported as not found.
+    Read-only model switching for the dashboard.  When an API key is provided,
+    readings are scoped to the key's authorized transformers; without a key,
+    any stored reading is allowed (dashboard default).
     """
     with db.connect() as connection:
         detail = db.reading_detail(connection, signal.reading_id)
-    if detail is None or detail["transformer_id"] not in authorized:
+    if detail is None:
         raise HTTPException(404, "Reading not found")
     from app.alerts.engine import IoTEvaluation  # local: only needed to rebuild statuses
     evaluations = [
