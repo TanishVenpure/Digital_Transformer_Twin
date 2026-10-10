@@ -23,7 +23,15 @@ from app.database.repository import Repository
 
 router = APIRouter(prefix="/agent", tags=["agent"])
 logger = logging.getLogger(__name__)
-agent_api_key = APIKeyHeader(name="X-Agent-API-Key", auto_error=False)
+agent_api_key = APIKeyHeader(
+    name="X-Agent-API-Key",
+    auto_error=False,
+    description=(
+        "The secret portion of an AGENT_CREDENTIALS entry (the value after the colon). "
+        "For example, if AGENT_CREDENTIALS contains TX-001:my-secret, enter my-secret here — "
+        "not the full TX-001:my-secret string and not the Gemini API key."
+    ),
+)
 
 
 # Scope items starting with "@" are permissions, never transformer IDs, so a

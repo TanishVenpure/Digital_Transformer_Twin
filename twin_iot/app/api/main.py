@@ -22,10 +22,13 @@ from app.api.security import (
     check_transformer_id, require_write_access,
 )
 from app.database import db
+from app.analytics import load_growth, winding
+from app.analytics.oil_leak import analyse as analyse_oil_leak, load_config as load_leak_config
 from app.formulas.registry import formula_registry
 from app.maintenance.sheet import SHEET_FIELDS, load_actions
 from app.processing.ingestion import read_csv
 from app.services.processing_service import ProcessingService
+from app.api.assistant_proxy import router as assistant_router
 from app.twin3d.blender_bridge import BlenderBridge
 from app.twin3d.selector import load_models, select_model
 
@@ -33,6 +36,7 @@ DASHBOARD_DIR = Path(os.environ.get("TWIN_DASHBOARD_DIR", PROJECT_ROOT.parent / 
 HOURS_PER_SECOND = 24  # timeline tick: one day of hourly data per second at 1x
 
 app = FastAPI(title="Transformer Twin IoT API", version="0.1.0")
+app.include_router(assistant_router)
 # Rejects DNS-rebinding requests whose Host is not this machine (TWIN_ALLOWED_HOSTS overrides).
 app.add_middleware(TrustedHostMiddleware, allowed_hosts=allowed_hosts())
 live_service = ProcessingService()
@@ -76,6 +80,9 @@ def timeline(transformer_id: str) -> dict[str, Any]:
     """Every stored hour for one transformer, compact enough to play back client-side."""
     with db.connect() as connection:
         rows = db.timeline(connection, transformer_id)
+        events = db.maintenance_events(connection, transformer_id)
+        thermal = _winding_analysis(connection, transformer_id)
+        cooling = db.top_oil_analysis(connection, transformer_id, live_service.thresholds)
     if not rows:
         raise HTTPException(404, f"No readings for {transformer_id}")
     frames = []
@@ -89,7 +96,77 @@ def timeline(transformer_id: str) -> dict[str, Any]:
         "transformer_id": transformer_id, "start": frames[0]["t"], "end": frames[-1]["t"],
         "hours_per_second": HOURS_PER_SECOND, "iots": list_iots(),
         "models": {name: spec.label for name, spec in models.models.items()}, "frames": frames,
+        "events": events,
+        "analytics": {"oil_leak": _oil_leak_analysis(rows), "load_growth": _load_growth_analysis(rows),
+                      "winding": thermal, "top_oil": cooling},
     }
+
+
+def _oil_leak_analysis(rows) -> dict[str, Any]:
+    """Refill cycles, leak rate per cycle and accelerating-leak flags, from the oil-level readings."""
+    slot = live_service.thresholds["oil_level"].iot_slot
+    series = [(ts, next((e[2] for e in evaluations if e[0] == slot), None)) for _, ts, _, _, evaluations in rows]
+    return {"slot": slot, **analyse_oil_leak(series, load_leak_config()).as_dict()}
+
+
+def _load_growth_analysis(rows) -> dict[str, Any]:
+    """Weekly load reviews: overload hours/events, daily-peak trend, rated-current forecast, flags."""
+    rule = live_service.thresholds["current_loading"]
+    series = [(ts, next((e[2] for e in evaluations if e[0] == rule.iot_slot), None)) for _, ts, _, _, evaluations in rows]
+    return {"slot": rule.iot_slot,
+            **load_growth.analyse(series, load_growth.load_config(warning=rule.warning, critical=rule.critical))}
+
+
+def _winding_analysis(connection, transformer_id: str) -> dict[str, Any]:
+    """Weekly thermal reviews: excess over the thermal model, insulation ageing, flags (+ hourly expected rise)."""
+    rules = live_service.thresholds
+    slot = rules["winding_temperature"].iot_slot
+    inputs = db.winding_inputs(connection, transformer_id, slot, rules["current_loading"].iot_slot)
+    return {"slot": slot, **winding.analyse(inputs, winding.load_config())}
+
+
+@app.get("/api/analytics/winding/{transformer_id}")
+def winding_endpoint(transformer_id: str) -> dict[str, Any]:
+    with db.connect() as connection:
+        result = _winding_analysis(connection, transformer_id)
+    if not result["expected"]:
+        raise HTTPException(404, f"No readings for {transformer_id}")
+    return {k: v for k, v in result.items() if k != "expected"}
+
+
+@app.get("/api/analytics/top-oil/{transformer_id}")
+def top_oil_endpoint(transformer_id: str) -> dict[str, Any]:
+    """Cooling health, cleaning cycles, oil ageing, forecasts and the winding cross-check (no hourly arrays)."""
+    with db.connect() as connection:
+        result = db.top_oil_analysis(connection, transformer_id, live_service.thresholds)
+    if not result["cycles"]:
+        raise HTTPException(404, f"No readings for {transformer_id}")
+    return {k: v for k, v in result.items() if k != "hourly"}
+
+
+@app.get("/api/analytics/load-growth/{transformer_id}")
+def load_growth_endpoint(transformer_id: str) -> dict[str, Any]:
+    with db.connect() as connection:
+        rows = db.timeline(connection, transformer_id)
+    if not rows:
+        raise HTTPException(404, f"No readings for {transformer_id}")
+    return _load_growth_analysis(rows)
+
+
+@app.get("/api/analytics/oil-leak/{transformer_id}")
+def oil_leak_endpoint(transformer_id: str) -> dict[str, Any]:
+    with db.connect() as connection:
+        rows = db.timeline(connection, transformer_id)
+    if not rows:
+        raise HTTPException(404, f"No readings for {transformer_id}")
+    return _oil_leak_analysis(rows)
+
+
+@app.get("/api/maintenance-events/{transformer_id}")
+def maintenance_events_endpoint(transformer_id: str) -> list[dict]:
+    """Maintenance actually performed (repairs), as opposed to checks raised by thresholds."""
+    with db.connect() as connection:
+        return db.maintenance_events(connection, transformer_id)
 
 
 @app.get("/api/readings/{reading_id}")

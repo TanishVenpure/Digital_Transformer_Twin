@@ -6,15 +6,18 @@
 <title>Transformer Twin Dashboard</title>
 <style>
   :root {
-    --bg: #0f1419;
-    --panel: #171d24;
-    --panel-2: #1e252e;
-    --border: #2a333e;
-    --text: #e6edf3;
-    --muted: #8b98a5;
+    --bg: #000;
+    --text: #eef3f8;
+    --muted: #a3b0bd;
     --accent: #3fa7ff;
-    --track: #262f3a;
-    --placeholder: #3a4552;
+    --border: rgba(255, 255, 255, .14);
+    --panel-2: rgba(255, 255, 255, .06);
+    --track: rgba(255, 255, 255, .12);
+    --placeholder: rgba(255, 255, 255, .25);
+    /* frosted glass */
+    --glass: rgba(14, 18, 24, .55);
+    --glass-edge: rgba(255, 255, 255, .16);
+    --glass-blur: blur(16px) saturate(140%);
     --normal: #3fb950;
     --warning: #d29922;
     --predicted: #a371f7;
@@ -27,242 +30,187 @@
     background: var(--bg);
     color: var(--text);
     font: 14px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-    display: flex;
-    flex-direction: column;
-  }
-
-  header {
-    padding: 12px 20px;
-    border-bottom: 1px solid var(--border);
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 12px;
-  }
-  header h1 { font-size: 16px; margin: 0; font-weight: 600; }
-  header .status { color: var(--muted); font-size: 12px; }
-
-  .layout {
-    flex: 1;
-    min-height: 0;
-    display: grid;
-    grid-template-columns: 1fr 380px;
-    grid-template-rows: 1fr auto;
-    gap: 12px;
-    padding: 12px;
-  }
-
-  .panel {
-    background: var(--panel);
-    border: 1px solid var(--border);
-    border-radius: 10px;
-    display: flex;
-    flex-direction: column;
-    min-height: 0;
-  }
-  .panel-title {
-    padding: 10px 14px;
-    border-bottom: 1px solid var(--border);
-    font-size: 12px;
-    text-transform: uppercase;
-    letter-spacing: .06em;
-    color: var(--muted);
-    display: flex;
-    justify-content: space-between;
-    gap: 8px;
-  }
-  .panel-title a { color: var(--accent); text-decoration: none; text-transform: none; letter-spacing: 0; }
-
-  /* ---------- Left column: health bars + 3D model ---------- */
-  .left { display: flex; flex-direction: column; gap: 12px; min-height: 0; }
-
-  .health-grid {
-    display: grid;
-    grid-template-columns: repeat(7, 1fr);
-    gap: 10px;
-    padding: 12px 14px;
-  }
-  .health {
-    background: var(--panel-2);
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    padding: 8px 10px;
-    min-width: 0;
-  }
-  .health .row { display: flex; justify-content: space-between; align-items: baseline; gap: 4px; }
-  .health .name { font-weight: 600; font-size: 13px; }
-  .health .value { color: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; white-space: nowrap; }
-  .health .sub { color: var(--muted); font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin: 2px 0 6px; }
-  .health .state { font-size: 11px; font-weight: 600; margin-top: 6px; color: var(--muted); }
-  .bar { height: 8px; background: var(--track); border-radius: 4px; overflow: hidden; }
-  .bar > span { display: block; height: 100%; width: 0; background: var(--placeholder); transition: width .15s, background-color .15s; }
-
-  .model { flex: 1; }
-  .model-body {
-    flex: 1;
-    position: relative;
-    margin: 10px;
-    min-height: 240px;
-    border: 2px solid var(--border);
-    border-radius: 8px;
     overflow: hidden;
-    transition: border-color .2s;
   }
-  .model-body canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
+
+  /* ---------- Hero: the 3D model fills the screen ---------- */
+  .hero { position: fixed; inset: 0; z-index: 0; background: #000; }
+  .hero canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
   .model-info {
-    position: absolute; left: 10px; top: 10px; z-index: 2;
-    background: rgba(15, 20, 25, .82); border: 1px solid var(--border); border-radius: 8px;
-    padding: 8px 12px; max-width: calc(100% - 20px); pointer-events: none;
+    position: absolute; left: 50%; top: 84px; transform: translateX(-50%); z-index: 4;
+    text-align: center; padding: 8px 16px; max-width: min(520px, calc(100% - 32px)); pointer-events: none;
+    transition: border-color .6s ease;
   }
+  .hero[class*="s-"] .model-info { border-color: color-mix(in srgb, var(--c) 70%, transparent); }
   .model-name { font-size: 15px; font-weight: 600; color: var(--text); }
   .model-signal { font-size: 12px; font-weight: 600; }
   .model-call { font: 11px/1.4 ui-monospace, Consolas, monospace; color: var(--muted); overflow-wrap: anywhere; margin-top: 2px; }
   .model-loading { position: absolute; inset: 0; display: grid; place-items: center; color: var(--muted); font-size: 12px; pointer-events: none; }
   .model-loading:empty { display: none; }
-  .panel-title .tools { display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-end; }
-  .panel-title { flex-wrap: wrap; align-items: center; }
-  .panel-title .tools button { padding: 2px 8px; font-size: 11px; text-transform: none; letter-spacing: 0; }
   .chips { position: absolute; inset: 0; pointer-events: none; overflow: hidden; z-index: 1; }
   .chip {
     position: absolute; left: 0; top: 0; display: flex; align-items: center; gap: 4px;
     padding: 1px 6px 1px 4px; border-radius: 3px; white-space: nowrap; pointer-events: auto; cursor: pointer;
     font: 500 10px/1.5 ui-monospace, Consolas, monospace; color: var(--text);
-    background: rgba(10, 13, 16, .8); border: 1px solid color-mix(in srgb, var(--c, #5c6773) 60%, transparent);
+    background: rgba(0, 0, 0, .6); border: 1px solid color-mix(in srgb, var(--c, #5c6773) 60%, transparent);
     transition: opacity .2s;
   }
-  .seg { display: flex; }
-  .seg button { border-radius: 0; margin-left: -1px; }
-  .seg button:first-child { border-radius: 6px 0 0 6px; margin-left: 0; }
-  .seg button:last-child { border-radius: 0 6px 6px 0; }
-  .seg button[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: #06121f; }
-  .model-bar {
-    position: absolute; left: 10px; right: 10px; bottom: 10px; z-index: 2;
-    display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px;
-    background: rgba(15, 20, 25, .82); border: 1px solid var(--border); border-radius: 8px; padding: 6px 10px;
-    font-size: 11px; color: var(--muted);
-  }
-  .model-bar button { padding: 3px 10px; font-size: 11px; }
-  .model-bar .explode { display: flex; align-items: center; gap: 8px; flex: 1 1 180px; min-width: 0; }
-  .model-bar input[type=range] { flex: 1; min-width: 0; accent-color: var(--accent); }
-  .model-bar output { color: var(--text); font-variant-numeric: tabular-nums; min-width: 4ch; text-align: right; }
-  .model-bar label.check { display: flex; align-items: center; gap: 4px; cursor: pointer; }
-  .model-bar input[type=checkbox] { accent-color: var(--accent); }
   .chip i { width: 7px; height: 7px; border-radius: 50%; background: var(--c, #5c6773); }
   .chip.dim { opacity: .25; }
 
-  /* ---------- Right column: LLM + maintenance ---------- */
-  .right { display: flex; flex-direction: column; gap: 12px; min-height: 0; }
-  .chat { flex: 1 1 50%; }
-  .chat-body {
-    flex: 1;
-    padding: 14px;
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
-    overflow: auto;
+  /* ---------- Floating glass tiles around the model ---------- */
+  .glass {
+    background: var(--glass);
+    -webkit-backdrop-filter: var(--glass-blur);
+    backdrop-filter: var(--glass-blur);
+    border: 1px solid var(--glass-edge);
+    border-radius: 14px;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, .45), inset 0 1px 0 rgba(255, 255, 255, .08);
   }
-  .msg {
-    max-width: 85%;
-    padding: 8px 12px;
-    border-radius: 10px;
-    background: var(--panel-2);
-    border: 1px solid var(--border);
-    color: var(--muted);
+  .overlay {
+    position: fixed; inset: 0; z-index: 3;
+    display: grid;
+    grid-template-columns: 270px 1fr 360px;
+    grid-template-rows: auto minmax(0, 1fr) auto;
+    gap: 16px;
+    padding: 16px;
+    pointer-events: none;
   }
+  .overlay > * { pointer-events: auto; min-width: 0; min-height: 0; }
+
+  header {
+    grid-column: 1 / -1;
+    padding: 10px 18px;
+    display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;
+  }
+  header h1 { font-size: 16px; margin: 0; font-weight: 600; }
+  header .status { color: var(--muted); font-size: 12px; }
+
+  .float { animation: float 9s ease-in-out infinite; }
+  .float:nth-child(2n) { animation-delay: -3s; }
+  .float:nth-child(3n) { animation-delay: -6s; }
+  @keyframes float { 50% { transform: translateY(-4px); } }
+  @media (prefers-reduced-motion: reduce) { .float { animation: none; } }
+
+  .panel { display: flex; flex-direction: column; min-height: 0; }
+  .panel-title {
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--border);
+    font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted);
+    display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap;
+  }
+  .panel-title a { color: var(--accent); text-decoration: none; text-transform: none; letter-spacing: 0; }
+
+  /* Left: the seven IoT health tiles */
+  .col-left { grid-row: 2 / 4; display: flex; flex-direction: column; gap: 10px; overflow: auto; padding: 4px 2px; }
+  .col-label { display: flex; justify-content: space-between; padding: 8px 14px; font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
+  .health-grid { display: flex; flex-direction: column; gap: 10px; }
+  .health-grid + .col-label { margin-top: 4px; }
+  .health { padding: 9px 12px; min-width: 0; transition: border-color .6s ease; }
+  .health[class*="s-"] { border-color: color-mix(in srgb, var(--c) 45%, var(--glass-edge)); }
+  .health .row { display: flex; justify-content: space-between; align-items: baseline; gap: 4px; }
+  .health .name { font-weight: 600; font-size: 13px; }
+  .health .value { color: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .health .sub { color: var(--muted); font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin: 2px 0 6px; }
+  .health .state { font-size: 11px; font-weight: 600; margin-top: 6px; color: var(--muted); }
+  .bar { height: 6px; background: var(--track); border-radius: 4px; overflow: hidden; }
+  .bar > span { display: block; height: 100%; width: 0; background: var(--placeholder); transition: width .2s, background-color .2s; }
+
+  /* Right: assistant, risk, maintenance sheet, data */
+  .col-right { grid-row: 2 / 4; display: flex; flex-direction: column; gap: 12px; min-height: 0; padding: 4px 2px; }
+  .col-right > details { flex: none; }
+  details.panel > summary { list-style: none; cursor: pointer; border-bottom-color: transparent; user-select: none; }
+  details.panel > summary::-webkit-details-marker { display: none; }
+  details.panel > summary::after { content: "▾"; font-size: 13px; transition: transform .2s; }
+  details.panel:not([open]) > summary::after { transform: rotate(-90deg); }
+  details.panel[open] > summary { border-bottom-color: var(--border); }
+  details.panel > summary:hover { color: var(--text); }
+  details.panel > summary .hint { text-transform: none; letter-spacing: 0; margin-left: auto; font-size: 11px; }
+  .chat-body { max-height: 30vh; padding: 14px; display: flex; flex-direction: column; gap: 10px; overflow: auto; }
+  .msg { max-width: 85%; padding: 8px 12px; border-radius: 10px; background: var(--panel-2); border: 1px solid var(--border); color: var(--muted); }
   .msg.user { align-self: flex-end; }
-  .chat-input {
-    display: flex;
-    gap: 8px;
-    padding: 12px 14px;
-    border-top: 1px solid var(--border);
-  }
+  .msg.assistant { align-self: flex-start; color: var(--text); }
+  .msg.assistant .answer { white-space: pre-wrap; }
+  .msg.assistant .meta { font-size: 11px; color: var(--muted); margin-top: 6px; }
+  .msg.assistant .evidence { font-size: 11px; color: var(--muted); margin-top: 4px; }
+  .msg.assistant .evidence summary { cursor: pointer; }
+  .msg.assistant .fact { margin: 2px 0; padding-left: 8px; border-left: 2px solid var(--border); }
+  .msg.error { color: var(--critical); border-color: color-mix(in srgb, var(--critical) 40%, var(--border)); }
+  .msg.thinking { color: var(--muted); font-style: italic; }
+  .chat-input { display: flex; gap: 8px; padding: 12px 14px; border-top: 1px solid var(--border); }
   .chat-input input {
-    flex: 1;
-    min-width: 0;
-    background: var(--panel-2);
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    padding: 8px 10px;
-    color: var(--text);
+    flex: 1; min-width: 0; background: var(--panel-2); border: 1px solid var(--border);
+    border-radius: 8px; padding: 8px 10px; color: var(--text);
   }
+  .chat-input input:focus { outline: none; border-color: var(--accent); }
   button {
-    background: var(--panel-2);
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    padding: 8px 14px;
-    color: var(--text);
-    cursor: pointer;
-    font: inherit;
+    background: rgba(255, 255, 255, .07); border: 1px solid var(--border); border-radius: 8px;
+    padding: 8px 14px; color: var(--text); cursor: pointer; font: inherit;
   }
   button:hover:not(:disabled) { border-color: var(--accent); }
   button:disabled { color: var(--muted); cursor: not-allowed; }
 
-  .maint { flex: 1 1 50%; }
-  .maint-list { flex: 1; overflow: auto; padding: 6px 0; min-height: 120px; }
-  .check {
-    display: grid;
-    grid-template-columns: auto 1fr;
-    gap: 2px 10px;
-    padding: 7px 14px;
-    border-bottom: 1px solid var(--border);
-    font-size: 12px;
-  }
+  .risk { flex: 0 0 auto; max-height: 240px; }
+  .risk-body { flex: 1; overflow: auto; padding: 10px 14px; font-size: 12px; }
+  .risk-body .risk-header { display: flex; align-items: baseline; gap: 10px; margin-bottom: 8px; }
+  .risk-body .risk-score { font-size: 24px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .risk-body .risk-cat { font-size: 13px; font-weight: 600; }
+  .risk-body .risk-factors { display: grid; grid-template-columns: 1fr auto auto; gap: 2px 10px; margin: 6px 0; }
+  .risk-body .risk-factors .label { color: var(--muted); text-transform: capitalize; }
+  .risk-body .risk-factors .score { font-variant-numeric: tabular-nums; text-align: right; }
+  .risk-body .risk-factors .weight { color: var(--muted); font-variant-numeric: tabular-nums; text-align: right; }
+  .risk-body .risk-disclaimer { color: var(--muted); font-size: 11px; margin-top: 6px; padding-top: 6px; border-top: 1px solid var(--border); }
+  .risk-body .risk-flags { margin-top: 4px; }
+  .risk-body .risk-flag { color: var(--warning); font-size: 11px; }
+  .risk-unavailable { color: var(--muted); padding: 10px 14px; font-size: 12px; }
+
+  .maint { flex: 1 1 auto; }
+  .maint-list { flex: 1; overflow: auto; padding: 6px 0; min-height: 80px; }
+  .check { display: grid; grid-template-columns: auto 1fr; gap: 2px 10px; padding: 7px 14px; border-bottom: 1px solid var(--border); font-size: 12px; }
+  .check:last-child { border-bottom: 0; }
   .check .no { color: var(--muted); font-variant-numeric: tabular-nums; }
   .check .what { font-weight: 600; }
   .check .action { grid-column: 2; color: var(--muted); }
   .check .when { grid-column: 2; color: var(--muted); font-size: 11px; }
   .empty { color: var(--muted); padding: 14px; font-size: 12px; }
 
-  /* ---------- Bottom: data drop + timeline ---------- */
-  .bottom {
-    grid-column: 1 / -1;
-    display: grid;
-    grid-template-columns: 280px 1fr;
-    gap: 12px;
-  }
   .drop {
-    margin: 14px;
-    flex: 1;
-    border: 2px dashed var(--border);
-    border-radius: 8px;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    gap: 4px;
-    padding: 16px;
-    color: var(--muted);
-    text-align: center;
-    cursor: pointer;
+    margin: 14px; border: 2px dashed var(--border); border-radius: 10px;
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px;
+    padding: 18px; color: var(--muted); text-align: center; cursor: pointer;
   }
   .drop.over { border-color: var(--accent); color: var(--text); }
   .drop small { font-size: 11px; }
   .drop .result { font-size: 11px; color: var(--text); }
 
-  .timeline-body { padding: 14px; display: flex; flex-direction: column; gap: 12px; }
+  /* Bottom centre: model controls + timeline */
+  .dock { grid-column: 2; grid-row: 3; display: flex; flex-direction: column; gap: 10px; align-self: end; }
+  .model-bar {
+    display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px;
+    padding: 8px 12px; font-size: 11px; color: var(--muted);
+  }
+  .model-bar button { padding: 3px 10px; font-size: 11px; }
+  .tick { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); font-size: 12px; }
+  .tick input { width: 64px; padding: 5px 8px; border-radius: 8px; border: 1px solid var(--border); background: var(--panel-2); color: var(--text); font: inherit; font-variant-numeric: tabular-nums; }
+  .model-bar button[aria-pressed="true"] { background: color-mix(in srgb, var(--accent) 22%, transparent); border-color: color-mix(in srgb, var(--accent) 60%, transparent); }
+  .model-bar input[type=range] { flex: 1; min-width: 0; accent-color: var(--accent); }
+  .model-bar output { color: var(--text); font-variant-numeric: tabular-nums; min-width: 4ch; text-align: right; }
+  .model-bar label.check { display: flex; align-items: center; gap: 4px; cursor: pointer; }
+  .model-bar input[type=checkbox] { accent-color: var(--accent); }
+  .seg { display: flex; }
+  .seg button { border-radius: 0; margin-left: -1px; }
+  .seg button:first-child { border-radius: 6px 0 0 6px; margin-left: 0; }
+  .seg button:last-child { border-radius: 0 6px 6px 0; }
+  .seg button[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: #06121f; }
+
+  .timeline-body { padding: 12px 14px; display: flex; flex-direction: column; gap: 10px; }
   .controls { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
   .controls .time { margin-left: auto; color: var(--muted); font-variant-numeric: tabular-nums; }
   .issues { color: var(--muted); font-size: 12px; min-height: 18px; }
   .issues b { color: var(--warning); font-weight: 600; }
-  .track {
-    position: relative;
-    height: 10px;
-    background: var(--track);
-    border-radius: 5px;
-    cursor: pointer;
-    touch-action: none;
-  }
+  .track { position: relative; height: 10px; background: var(--track); border-radius: 5px; cursor: pointer; touch-action: none; }
   .track .fill { position: absolute; left: 0; top: 0; bottom: 0; width: 0; background: var(--accent); opacity: .35; border-radius: 5px; }
-  .track .knob {
-    position: absolute;
-    left: 0;
-    top: 50%;
-    width: 16px;
-    height: 16px;
-    border-radius: 50%;
-    background: var(--accent);
-    transform: translate(-50%, -50%);
-  }
+  .track .knob { position: absolute; left: 0; top: 50%; width: 16px; height: 16px; border-radius: 50%; background: var(--accent); transform: translate(-50%, -50%); }
   .ticks { display: flex; justify-content: space-between; color: var(--muted); font-size: 11px; }
 
   .s-NORMAL { --c: var(--normal); }
@@ -272,132 +220,316 @@
   .s-CRITICAL { --c: var(--critical); }
   .health[class*="s-"] .bar > span { background: var(--c); }
   .health[class*="s-"] .state, .check[class*="s-"] .what, .model-signal { color: var(--c, var(--muted)); }
-  .model-body[class*="s-"] { border-color: var(--c); }
 
-  @media (max-width: 1100px) {
-    .health-grid { grid-template-columns: repeat(4, 1fr); }
+  /* ---------- monitor cards (click to open the graph) ---------- */
+  .col-label .count { text-transform: none; letter-spacing: 0; font-size: 11px; }
+  .health { position: relative; cursor: pointer; }
+  .health:hover { border-color: rgba(255, 255, 255, .32); }
+  .health:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .health .open { position: absolute; right: 10px; top: 8px; color: var(--muted); font-size: 12px; }
+  .health:hover .open { color: var(--accent); }
+  .health .row { padding-right: 16px; }
+  .health .brow { display: flex; align-items: center; gap: 8px; }
+  .health .brow .bar { flex: 1; }
+  .health .hp { color: var(--muted); font: 500 10.5px ui-monospace, Consolas, monospace; min-width: 4ch; text-align: right; }
+  .health .flag {
+    display: none; margin: 0 0 4px; font-size: 9.5px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase;
+    color: var(--maintenance); border: 1px solid color-mix(in srgb, var(--maintenance) 50%, transparent);
+    background: color-mix(in srgb, var(--maintenance) 14%, transparent); border-radius: 5px; padding: 1px 5px;
   }
-  .layout > *, .bottom > * { min-width: 0; }
-  @media (max-width: 900px) {
-    html, body { height: auto; }
-    header { flex-wrap: wrap; padding: 12px 16px; }
-    .layout { display: flex; flex-direction: column; padding: 12px 16px; }
-    .left, .right { min-height: auto; }
-    .model { flex: none; }
-    .health-grid { grid-template-columns: repeat(2, 1fr); }
-    .bottom { display: flex; flex-direction: column; }
+  .health.flagged .flag { display: inline-block; }
+
+  /* header: playback clock + overall status */
+  .head-right { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin-left: auto; }
+  .clock { text-align: right; }
+  .clock b { display: block; font: 600 13px ui-monospace, Consolas, monospace; }
+  .clock span { color: var(--muted); font-size: 11px; }
+  .pill {
+    display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; font-size: 11px; font-weight: 600;
+    padding: 3px 9px 3px 7px; border-radius: 999px; color: var(--c, var(--muted));
+    background: color-mix(in srgb, var(--c, var(--muted)) 14%, transparent);
+    border: 1px solid color-mix(in srgb, var(--c, var(--muted)) 40%, transparent);
+  }
+  .pill::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--c, var(--muted)); }
+  .tag {
+    display: inline-flex; font-size: 10px; font-weight: 600; letter-spacing: .05em; text-transform: uppercase;
+    padding: 2px 7px; border-radius: 6px; color: var(--muted); border: 1px solid var(--border);
+  }
+  .flagtag { color: var(--maintenance); border-color: color-mix(in srgb, var(--maintenance) 45%, transparent); }
+
+  /* maintenance sheet filters + pinned trend flag */
+  .filters { display: flex; gap: 6px; padding: 8px 14px 2px; flex-wrap: wrap; }
+  .filters button { padding: 3px 10px; font-size: 11px; border-radius: 999px; }
+  .filters button[aria-pressed="true"] { background: color-mix(in srgb, var(--accent) 22%, transparent); border-color: color-mix(in srgb, var(--accent) 60%, transparent); }
+  .check .tags { grid-column: 2; display: flex; gap: 6px; flex-wrap: wrap; }
+  .check.pinned { background: color-mix(in srgb, var(--maintenance) 8%, transparent); }
+
+  /* timeline: worst status per hour along the bar */
+  .track canvas { position: absolute; inset: 0; width: 100%; height: 100%; border-radius: 5px; }
+  .legend { display: flex; gap: 12px; flex-wrap: wrap; color: var(--muted); font-size: 11px; }
+  .legend span { display: inline-flex; align-items: center; gap: 5px; }
+  .legend i { width: 9px; height: 9px; border-radius: 2px; background: var(--c); }
+
+  /* camera pad */
+  .center { grid-column: 2; grid-row: 2; position: relative; pointer-events: none; }
+  .nav {
+    position: absolute; right: 0; bottom: 0; pointer-events: auto; padding: 7px;
+    display: grid; gap: 4px; grid-template-columns: repeat(3, 28px) 6px 44px 28px; grid-template-rows: repeat(3, 28px);
+    grid-template-areas: ". up . . fwd zin" "left home right . back zout" ". down . . spin spin";
+  }
+  .nav button { width: 100%; height: 28px; padding: 0; display: grid; place-items: center; font-size: 12px; line-height: 1; border-radius: 7px; user-select: none; touch-action: none; }
+  .nav [data-nav="up"] { grid-area: up; } .nav [data-nav="down"] { grid-area: down; }
+  .nav [data-nav="left"] { grid-area: left; } .nav [data-nav="right"] { grid-area: right; }
+  .nav [data-nav="home"] { grid-area: home; } .nav [data-nav="fwd"] { grid-area: fwd; font-size: 11px; }
+  .nav [data-nav="back"] { grid-area: back; font-size: 11px; }
+  .nav [data-nav="zin"] { grid-area: zin; font-size: 15px; } .nav [data-nav="zout"] { grid-area: zout; font-size: 15px; }
+  .nav [data-spin] { grid-area: spin; font-size: 11px; }
+  .free { display: none; font-size: 11px; color: var(--accent); margin-top: 2px; }
+  .hero.manual .free { display: block; }
+
+  /* ---------- per-monitor graph ---------- */
+  .modal[hidden] { display: none; }
+  .modal { position: fixed; inset: 0; z-index: 50; display: grid; place-items: center; padding: 24px; background: rgba(0, 0, 0, .55); }
+  .msheet { width: min(1180px, 100%); max-height: calc(100vh - 48px); overflow: auto; display: flex; flex-direction: column; background: rgba(14, 18, 24, .82); }
+  .msheet-head { display: flex; align-items: flex-start; gap: 14px; padding: 16px 18px; border-bottom: 1px solid var(--border); flex-wrap: wrap; }
+  .msheet-head h2 { margin: 0; font-size: 18px; font-weight: 600; }
+  .msheet-head .sub { color: var(--muted); font-size: 12px; margin-top: 4px; }
+  .msheet-head .badges { display: flex; gap: 8px; align-items: center; margin-top: 8px; flex-wrap: wrap; }
+  .msheet-head .right { margin-left: auto; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .msheet-head .seg button { padding: 5px 10px; font-size: 12px; }
+  #metric-close { width: 34px; height: 34px; padding: 0; font-size: 18px; line-height: 1; }
+  .stats { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 10px; padding: 14px 18px 4px; }
+  .stat { background: var(--panel-2); border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; display: grid; gap: 2px; min-width: 0; }
+  .stat span { color: var(--muted); font-size: 11px; }
+  .stat b { font: 600 19px ui-monospace, Consolas, monospace; }
+  .stat small { color: var(--muted); font-size: 10.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .chart-legend { display: flex; gap: 14px; flex-wrap: wrap; padding: 10px 18px 0; color: var(--muted); font-size: 11.5px; }
+  .chart-legend span { display: inline-flex; align-items: center; gap: 6px; }
+  .chart-legend span[hidden] { display: none; }
+  .chart-legend .inv { color: var(--accent); }
+  .chart-legend .ln { width: 16px; height: 0; border-top: 2px solid var(--accent); }
+  .chart-legend .dash { width: 16px; height: 0; border-top: 2px dashed var(--c); }
+  .chart-legend .band { width: 12px; height: 9px; border-radius: 2px; background: var(--c); opacity: .55; }
+  .chart-legend .tri { width: 0; height: 0; border-left: 5px solid transparent; border-right: 5px solid transparent; border-top: 7px solid var(--muted); }
+  .chart-legend .mnt { width: 13px; height: 13px; border-radius: 50%; border: 1.5px solid var(--text); font: 700 8px/10px system-ui, sans-serif; text-align: center; color: var(--text); }
+  .plot { position: relative; height: 360px; margin: 6px 10px 0; }
+  .plot svg { width: 100%; height: 100%; display: block; }
+  .plot .ax { fill: var(--muted); font: 11px ui-monospace, Consolas, monospace; }
+  .plot .lim { fill: var(--text); font: 600 11px system-ui, sans-serif; }
+  .plot .wrench { fill: var(--text); font: 700 9px system-ui, sans-serif; pointer-events: none; }
+  .plot .cyc { fill: var(--muted); font: 500 11px ui-monospace, Consolas, monospace; }
+  .banner { margin: 12px 18px 0; padding: 9px 12px; border-radius: 9px; font-size: 12.5px; color: var(--muted); background: var(--panel-2); border: 1px solid var(--border); }
+  .banner b { color: var(--text); }
+  .banner.alert { color: #fde3c4; background: color-mix(in srgb, var(--maintenance) 12%, transparent); border-color: color-mix(in srgb, var(--maintenance) 45%, transparent); }
+  .banner.alert b { color: var(--maintenance); }
+  .tip[hidden] { display: none; }
+  .tip { position: absolute; z-index: 3; width: 220px; pointer-events: none; display: grid; gap: 4px; background: rgba(0, 0, 0, .9); border: 1px solid var(--glass-edge); border-radius: 8px; padding: 8px 10px; font-size: 12px; }
+  .tip time { color: var(--muted); font: 11px ui-monospace, Consolas, monospace; }
+  .tip .pill { justify-self: start; }
+  .tip .rep { color: var(--text); border-top: 1px solid var(--border); padding-top: 4px; }
+  .repairs { padding: 6px 18px 18px; }
+  .repairs h3 { margin: 6px 0 8px; font-size: 13px; font-weight: 600; }
+  .repairs ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; max-height: 160px; overflow: auto; }
+  .repairs li { display: flex; gap: 12px; font-size: 12px; background: var(--panel-2); border: 1px solid var(--border); border-radius: 8px; padding: 7px 10px; }
+  .repairs li time { color: var(--muted); font-family: ui-monospace, Consolas, monospace; white-space: nowrap; }
+  .repairs li.none { color: var(--muted); }
+
+  @media (max-width: 1300px) {
+    .overlay { grid-template-columns: 240px 1fr 320px; }
+  }
+  @media (max-width: 1100px) {
+    body { overflow: auto; }
+    .hero { position: relative; height: 62vh; }
+    .model-info { top: 12px; }
+    .overlay { position: static; display: flex; flex-direction: column; padding: 16px; pointer-events: auto; }
+    header { order: -1; }
+    .health-grid { display: grid; grid-template-columns: repeat(2, 1fr); }
+    .col-left { overflow: visible; }
     .maint-list { max-height: 360px; }
-    .model-body { min-height: 340px; flex: none; }
-    .chat { min-height: 300px; }
-    .maint { min-height: 320px; }
+    .float { animation: none; }
+    .center { display: block; order: -1; }
+    .nav { position: static; margin: 0 auto; width: max-content; }
+    .stats { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .plot { height: 300px; }
+    .modal { padding: 10px; }
   }
 </style>
 </head>
 <body>
 
-<header>
-  <h1>Digital Transformer Twin</h1>
-  <span class="status" id="status">Connecting…</span>
-</header>
+<!-- Hero: the 3D model on a black canvas -->
+<div class="hero model-body" id="model-viewport">
+  <div class="model-info glass">
+    <div class="model-name" id="model-name">Base transformer</div>
+    <div class="model-signal" id="model-signal">All monitors normal</div>
+    <div class="model-call" id="model-call"></div>
+    <div class="free">Free navigation · alerts won't move the camera · Reset view to follow</div>
+  </div>
+  <div class="model-loading" id="model-loading"></div>
+</div>
 
-<main class="layout">
-
-  <!-- Left: health bars on top, 3D model below -->
-  <section class="left">
-    <div class="panel">
-      <div class="panel-title"><span>Sensor health</span><span id="transformer"></span></div>
-      <div class="health-grid" id="health-grid"></div>
+<main class="overlay">
+  <header class="glass">
+    <div>
+      <h1>Digital Transformer Twin</h1>
+      <span class="status" id="status">Connecting…</span>
     </div>
-
-    <div class="panel model">
-      <div class="panel-title">
-        <span>3D model</span>
-        <span class="tools">
-          <span class="seg" role="group" aria-label="Tank view">
-            <button data-mode="solid" aria-pressed="false">Solid</button><button data-mode="cut" aria-pressed="false">Cutaway</button><button data-mode="xray" aria-pressed="true">X-ray</button>
-          </span>
-          <button id="view-spin">Spin</button><button id="view-reset" title="Back to the signalled view">Reset view</button>
-        </span>
-      </div>
-      <div class="model-body" id="model-viewport">
-        <div class="model-info">
-          <div class="model-name" id="model-name">Base transformer</div>
-          <div class="model-signal" id="model-signal">All IoTs normal</div>
-          <div class="model-call" id="model-call"></div>
-        </div>
-        <div class="model-loading" id="model-loading"></div>
-        <div class="model-bar">
-          <button id="explode-btn">Explode</button>
-          <label class="explode" for="explode">Exploded
-            <input type="range" id="explode" min="0" max="100" value="0">
-            <output id="explode-v" for="explode">0%</output>
-          </label>
-          <label class="check"><input type="checkbox" id="oil-toggle" checked> Oil</label>
-          <label class="check"><input type="checkbox" id="labels-toggle" checked> Labels</label>
-        </div>
-      </div>
+    <div class="head-right">
+      <div class="clock"><b id="clock">--</b><span id="clock-sub">waiting for data</span></div>
+      <span class="pill" id="overall">No data</span>
     </div>
+  </header>
+
+  <!-- Left: sensor health tiles -->
+  <section class="col-left">
+    <div class="col-label glass"><span>Precision measurement</span><span class="count" id="count-precision"></span></div>
+    <div class="health-grid" id="cards-precision"></div>
+    <div class="col-label glass"><span>Transformer</span><span class="count" id="count-transformer"></span></div>
+    <div class="health-grid" id="cards-transformer"></div>
   </section>
 
-  <!-- Right: LLM assistant + maintenance sheet -->
-  <aside class="right">
-    <div class="panel chat">
-      <div class="panel-title">Assistant</div>
-      <div class="chat-body">
-        <div class="msg">Assistant responses will appear here.</div>
-        <div class="msg user">User question placeholder</div>
+  <!-- Right: assistant, risk, maintenance sheet, data -->
+  <aside class="col-right">
+    <details class="panel glass" id="chat-panel" open>
+      <summary class="panel-title"><span>Assistant</span><span class="hint">Ask about the transformer</span></summary>
+      <div class="chat-body" id="chat-body">
+        <div class="msg assistant">Ask a question about the transformer's maintenance history, risk, or sensor readings.</div>
       </div>
       <div class="chat-input">
-        <input type="text" placeholder="Ask about the transformer…" disabled>
-        <button disabled>Send</button>
+        <input type="text" id="chat-input" placeholder="Ask about the transformer…">
+        <button id="chat-send">Send</button>
       </div>
-    </div>
+    </details>
 
-    <div class="panel maint">
+    <details class="panel glass risk" id="risk-panel">
+      <summary class="panel-title"><span>Maintenance risk</span><span class="hint" id="risk-source"></span></summary>
+      <div id="risk-body"><div class="risk-unavailable" id="risk-status">Loading risk assessment…</div></div>
+    </details>
+
+    <div class="panel glass maint">
       <div class="panel-title">
         <span>Maintenance sheet <span id="maint-count"></span></span>
         <a id="maint-download" href="#" download>CSV</a>
       </div>
+      <div class="filters" role="group" aria-label="Filter maintenance checks">
+        <button data-filter="all" aria-pressed="true">All</button>
+        <button data-filter="precision" aria-pressed="false">Precision measurement</button>
+        <button data-filter="transformer" aria-pressed="false">Transformer</button>
+      </div>
       <div class="maint-list" id="maint-list"><div class="empty">No checks yet.</div></div>
     </div>
-  </aside>
 
-  <!-- Bottom: data drop + time-series timeline -->
-  <section class="bottom">
-    <div class="panel">
-      <div class="panel-title">Data</div>
+    <details class="panel glass" id="data-panel">
+      <summary class="panel-title"><span>Data</span><span class="hint">Upload a CSV</span></summary>
       <label class="drop" id="drop">
         <span>Drop data file here</span>
         <small>CSV · hourly readings · validated on upload</small>
         <span class="result" id="drop-result"></span>
         <input type="file" id="file" accept=".csv" hidden>
       </label>
+    </details>
+  </aside>
+
+  <!-- Bottom centre: model controls + timeline -->
+  <section class="dock">
+    <div class="model-bar glass">
+      <span class="seg" role="group" aria-label="Tank view">
+        <button data-mode="solid" aria-pressed="false">Solid</button><button data-mode="cut" aria-pressed="false">Cutaway</button><button data-mode="xray" aria-pressed="true">X-ray</button>
+      </span>
+      <button id="view-reset" title="Back to the signalled view">Reset view</button>
+      <button id="explode-btn" aria-pressed="false">Explode</button><button id="assemble-btn" aria-pressed="true">Assemble</button>
+      <label class="check"><input type="checkbox" id="oil-toggle" checked> Oil</label>
+      <label class="check"><input type="checkbox" id="labels-toggle" checked> Labels</label>
     </div>
 
-    <div class="panel">
-      <div class="panel-title"><span>Timeline</span><span>1 day / second at 1×</span></div>
+    <div class="panel glass">
+      <div class="panel-title"><span>Timeline</span><span id="rate">1 hour every 2 s</span></div>
       <div class="timeline-body">
         <div class="controls">
           <button id="back" title="Back one day" disabled>&#9198;</button>
           <button id="play" title="Play / pause" disabled>&#9654;</button>
           <button id="fwd" title="Forward one day" disabled>&#9197;</button>
-          <button id="speed" title="Playback speed" disabled>1×</button>
+          <label class="tick" for="tick" title="Seconds of playback for each hour of data at 1x">1 hour every
+            <input type="number" id="tick" min="0.01" max="60" step="0.5" value="2" disabled> s</label>
+          <button id="speed" title="Fast-forward / slow down (multiplies the tick rate)" disabled>1×</button>
           <span class="time" id="time">--:-- / --:--</span>
         </div>
-        <div class="track" id="track"><span class="fill" id="fill"></span><span class="knob" id="knob"></span></div>
+        <div class="track" id="track"><canvas id="strip"></canvas><span class="knob" id="knob"></span></div>
         <div class="ticks" id="ticks"><span>start</span><span></span><span></span><span></span><span>end</span></div>
         <div class="issues" id="issues"></div>
+        <div class="legend">
+          <span class="s-NORMAL"><i></i>Normal</span><span class="s-WARNING"><i></i>Warning</span>
+          <span class="s-PREDICTED_MAINTENANCE"><i></i>Predicted</span><span class="s-MAINTENANCE_REQUIRED"><i></i>Maintenance</span>
+          <span class="s-CRITICAL"><i></i>Critical</span>
+        </div>
       </div>
     </div>
   </section>
 
+  <!-- camera pad over the open space around the model -->
+  <section class="center">
+    <div class="nav glass" role="group" aria-label="Move the camera">
+      <button data-nav="up" title="Move up (Up arrow / E)" aria-label="Move up">&#9650;</button>
+      <button data-nav="left" title="Move left (Left arrow / A)" aria-label="Move left">&#9664;</button>
+      <button data-nav="home" title="Reset view (R)" aria-label="Reset view">&#9673;</button>
+      <button data-nav="right" title="Move right (Right arrow / D)" aria-label="Move right">&#9654;</button>
+      <button data-nav="down" title="Move down (Down arrow / Q)" aria-label="Move down">&#9660;</button>
+      <button data-nav="fwd" title="Go forward into the model (W)">Fwd</button>
+      <button data-nav="back" title="Go back (S)">Back</button>
+      <button data-nav="zin" title="Zoom in (+ / scroll)" aria-label="Zoom in">+</button>
+      <button data-nav="zout" title="Zoom out (- / scroll)" aria-label="Zoom out">&minus;</button>
+      <button id="view-spin" data-spin title="Spin the model">Spin</button>
+    </div>
+  </section>
 </main>
+
+<!-- per-monitor graph, opened by clicking a monitor card -->
+<div class="modal" id="metric-overlay" hidden role="dialog" aria-modal="true" aria-labelledby="metric-title">
+  <div class="msheet glass">
+    <div class="msheet-head">
+      <div>
+        <h2 id="metric-title">Metric</h2>
+        <div class="sub" id="metric-sub"></div>
+        <div class="badges"><span class="tag" id="metric-group"></span><span class="pill" id="metric-status"></span></div>
+      </div>
+      <div class="right">
+        <span class="seg" id="metric-view" role="group" aria-label="Chart view">
+          <button data-view="health" aria-pressed="true">Health %</button><button data-view="value" aria-pressed="false">Measured value</button>
+        </span>
+        <span class="seg" id="metric-range" role="group" aria-label="Time range">
+          <button data-range="7d" aria-pressed="true">7 days</button><button data-range="30d" aria-pressed="false">30 days</button><button data-range="all" aria-pressed="false">All</button>
+        </span>
+        <button id="metric-close" aria-label="Close graph">&times;</button>
+      </div>
+    </div>
+    <div class="banner" id="metric-banner" hidden></div>
+    <div class="stats" id="metric-stats"></div>
+    <div class="chart-legend">
+      <span><i class="ln"></i>Metric</span>
+      <span class="s-WARNING"><i class="dash"></i>Warning limit</span>
+      <span class="s-CRITICAL"><i class="dash"></i>Critical limit</span>
+      <span><i class="tri"></i>Maintenance check raised (colour = signal)</span>
+      <span><i class="mnt">M</i>Maintenance performed</span>
+      <span id="legend-inverted" hidden class="inv">&#8595; Axis inverted: higher values are plotted lower, so heading toward the limit reads as a decline</span>
+      <span id="legend-expected" hidden><i class="dash" style="--c:#eef3f8"></i><span id="legend-expected-text">Expected at this load (thermal model)</span></span>
+      <span class="legend-topoil" hidden><i class="band" style="--c:#64748b"></i>Heat from load</span>
+      <span class="legend-topoil" hidden><i class="band" style="--c:#f59e0b"></i>Cooling fault</span>
+      <span class="legend-topoil" hidden><i class="band" style="--c:#ef4444"></i>Low oil</span>
+      <span id="legend-trend" hidden><i class="ln" style="border-top-color:#eef3f8"></i>Daily-peak trend (dashed = projection)</span>
+      <span>Strip below = status per hour</span>
+    </div>
+    <div class="plot" id="metric-plot"><svg id="metric-svg" role="img" aria-label="Metric health over time"></svg><div class="tip" id="metric-tip" hidden></div></div>
+    <div class="repairs"><h3>Maintenance performed in this window</h3><ul id="metric-repairs"></ul></div>
+  </div>
+</div>
 
 <script src="vendor/three/three.min.js"></script>
 <script src="vendor/three/GLTFLoader.js"></script>
 <script src="vendor/three/OrbitControls.js"></script>
 <script src="vendor/three/RoomEnvironment.js"></script>
-<script src="twin3d.js"></script>
+<script src="metal.js?v=20261010-7"></script>
+<script src="twin3d.js?v=20261010-7"></script>
+<script src="metric-chart.js?v=20261010-7"></script>
 <script>
 (() => {
   const API = "/api";
@@ -414,44 +546,105 @@
     try { key ? sessionStorage.setItem(KEY_STORE, key) : sessionStorage.removeItem(KEY_STORE); } catch (_) { /* ignore */ }
     return Boolean(key);
   }
+  const DEFAULT_TICK_S = 2;
   const SPEEDS = [1, 2, 4, 0.5];
-  // Provisional bar fill per status until the Health Engine provides a score.
-  const FILL = { NORMAL: 100, WARNING: 65, PREDICTED_MAINTENANCE: 50, MAINTENANCE_REQUIRED: 30, CRITICAL: 12 };
   const LABEL = { NORMAL: "Normal", WARNING: "Warning", PREDICTED_MAINTENANCE: "Predicted", MAINTENANCE_REQUIRED: "Maintenance", CRITICAL: "Critical" };
-  const SHORT_NAME = ["Current sensor", "Voltage sensor", "Current", "Voltage", "Oil level", "Top-oil temp", "Winding temp"];
-  const UNIT = { percent: "%", percent_of_rated: "%", percent_deviation: "%", percent_of_gauge: "%", degC: "°C", K_rise_over_ambient: "K" };
+  const RANK = { NORMAL: 0, WARNING: 1, PREDICTED_MAINTENANCE: 2, MAINTENANCE_REQUIRED: 3, CRITICAL: 4 };
+  const COLOR = { NORMAL: "#3fb950", WARNING: "#d29922", PREDICTED_MAINTENANCE: "#a371f7", MAINTENANCE_REQUIRED: "#f0883e", CRITICAL: "#f85149" };
+  const MONITORS = {
+    1: { name: "Current Sensor", metric: "Instrument error vs reference", group: "precision", fmt: (v) => [v.toFixed(2), "%"] },
+    2: { name: "Voltage Sensor", metric: "Instrument error vs reference", group: "precision", fmt: (v) => [v.toFixed(2), "%"] },
+    3: { name: "Current", metric: "Load, % of rated current", group: "transformer", fmt: (v) => [v.toFixed(1), "%"] },
+    4: { name: "Voltage", metric: "Supply deviation (external grid)", group: "transformer", fmt: (v) => ["±" + v.toFixed(1), "%"] },
+    5: { name: "Oil Level", metric: "Conservator gauge", group: "transformer", fmt: (v) => [v.toFixed(1), "%"] },
+    6: { name: "Top-Oil Temperature", metric: "Top-oil, absolute", group: "transformer", fmt: (v) => [v.toFixed(1), "°C"] },
+    7: { name: "Winding Temperature", metric: "Hottest phase rise over ambient", group: "transformer", fmt: (v) => [v.toFixed(1), "K"] },
+  };
+  const TREND_FLAGS = {
+    oil_leak: { flag: "ACCELERATING_OIL_LEAK", badge: "Leak accelerating", label: "Accelerating oil leak",
+      title: "Each oil top-up is lasting less time: oil loss is accelerating" },
+    load_growth: { flag: "LOAD_GROWTH", badge: "Load growing", label: "Load growth",
+      title: "Overloads are becoming more frequent: demand is growing toward the transformer's rating" },
+    winding: { flag: "WINDING_EXCESS_HEATING", badge: "Running hot", label: "Winding excess heating",
+      title: "The winding is hotter than its load explains: possible restricted oil flow or winding fault" },
+    top_oil: { flag: "OIL_AGEING", badge: "Oil ageing", label: "Oil ageing",
+      title: "Radiator cleaning recovers less each time and the interval keeps shrinking: the oil itself is ageing" },
+  };
+  const FLAG_LABEL = Object.fromEntries(Object.values(TREND_FLAGS).map((f) => [f.flag, f.label]));
+  FLAG_LABEL.COOLING_DEGRADED = "Cooling degraded";
+  const GROUP = {
+    precision: { label: "Precision Measurement Maintenance", short: "Precision measurement" },
+    transformer: { label: "Transformer Maintenance", short: "Transformer" },
+  };
 
   const $ = (id) => document.getElementById(id);
   const twin = window.Twin3D
     ? Twin3D.create(document.getElementById("model-viewport"), {
         onStatus: (t) => (document.getElementById("model-loading").textContent = t),
-        // link options: ?view=solid|cut|xray  ?explode=0..100 (skips the intro)  ?intro=0
         mode: new URLSearchParams(location.search).get("view") || undefined,
         noIntro: /(^|[?&])(intro=0|explode=)/.test(location.search),
+        offsetY: (w, h) => {
+          const header = document.querySelector("header"), dock = document.querySelector(".dock");
+          if (!header || !dock || getComputedStyle(document.querySelector(".hero")).position !== "fixed") return 0;
+          const top = header.getBoundingClientRect().bottom, bottom = dock.getBoundingClientRect().top;
+          return h / 2 - (top + bottom) / 2;
+        },
         t: (Number(new URLSearchParams(location.search).get("explode")) || 0) / 100,
+        onManual: (on) => document.getElementById("model-viewport").classList.toggle("manual", on),
         onExplode: (t) => {
-          const pct = Math.round(t * 100);
-          document.getElementById("explode").value = pct;
-          document.getElementById("explode-v").textContent = pct + "%";
-          document.getElementById("explode-btn").textContent = t > 0.5 ? "Assemble" : "Explode";
+          document.getElementById("explode-btn").setAttribute("aria-pressed", t > 0.5);
+          document.getElementById("assemble-btn").setAttribute("aria-pressed", t <= 0.5);
         },
       })
     : { setStatuses() {}, focus() {}, resetView() {}, toggleSpin() { return false; }, setMode() {}, setOil() {}, setLabels() {}, explode() {}, t: 0 };
-  const state = { data: null, sheet: [], pos: 0, playing: false, speed: 0, frame: -1, last: 0, model: null, signalBusy: false, signalPending: null };
+  let chart = null;
+  const state = { data: null, sheet: [], filter: "all", pos: 0, playing: false, speed: 0, tick: DEFAULT_TICK_S, frame: -1, last: 0, model: null, painted: -1, signalBusy: false, signalPending: null };
 
   const fmtTime = (iso) => { const d = new Date(iso); return d.toISOString().slice(0, 16).replace("T", " "); };
   const fmtDay = (iso) => new Date(iso).toLocaleDateString(undefined, { day: "numeric", month: "short", timeZone: "UTC" });
   const setStatusClass = (el, status) => { el.className = el.className.replace(/\bs-\S+/g, "").trim(); if (status) el.classList.add("s-" + status); };
+  const worst = (list) => list.reduce((w, s) => (s && (w == null || RANK[s] > RANK[w]) ? s : w), null);
+  const escHtml = (s) => { const d = document.createElement("div"); d.textContent = s; return d.innerHTML; };
 
-  function buildBars(iots) {
-    $("health-grid").innerHTML = iots.map((iot, i) => `
-      <div class="health" id="iot-${iot.slot}" title="${iot.display_name}">
-        <div class="row"><span class="name">IOT${iot.slot}</span><span class="value">—</span></div>
-        <div class="sub">${SHORT_NAME[i] || iot.display_name}</div>
-        <div class="bar"><span></span></div>
-        <div class="state">No data</div>
-      </div>`).join("");
+  function buildCards(iots) {
+    const html = { precision: "", transformer: "" };
+    for (const iot of iots) {
+      const m = MONITORS[iot.slot];
+      html[m.group] += `
+        <div class="health glass float" id="iot-${iot.slot}" data-slot="${iot.slot}" role="button" tabindex="0" title="Open the ${m.name} graph">
+          <span class="open" aria-hidden="true">&#8599;</span>
+          <div class="row"><span class="name">${m.name}</span><span class="value">—</span></div>
+          <div class="sub">${m.metric}</div>
+          <span class="flag"></span>
+          <div class="brow"><div class="bar"><span></span></div><span class="hp"></span></div>
+          <div class="state">No data</div>
+        </div>`;
+    }
+    $("cards-precision").innerHTML = html.precision;
+    $("cards-transformer").innerHTML = html.transformer;
+    document.querySelectorAll(".health[data-slot]").forEach((c) => {
+      const go = () => chart && chart.open(Number(c.dataset.slot));
+      c.onclick = go;
+      c.onkeydown = (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); go(); } };
+    });
   }
+
+  function drawStrip() {
+    const canvas = $("strip"), frames = state.data?.frames;
+    if (!frames) return;
+    const w = Math.max(1, Math.round(canvas.clientWidth * devicePixelRatio)), h = 10;
+    canvas.width = w; canvas.height = h;
+    const ctx = canvas.getContext("2d");
+    for (let x = 0; x < w; x++) {
+      const a = Math.floor((x / w) * frames.length), b = Math.max(a + 1, Math.floor(((x + 1) / w) * frames.length));
+      let s = null;
+      for (let i = a; i < b && i < frames.length; i++) s = worst([s, ...frames[i].s]);
+      ctx.globalAlpha = 0.75;
+      ctx.fillStyle = s ? COLOR[s] : "rgba(255,255,255,.12)";
+      ctx.fillRect(x, 0, 1, h);
+    }
+  }
+  new ResizeObserver(drawStrip).observe($("track"));
 
   async function load(transformerId) {
     const [timeline, sheet] = await Promise.all([
@@ -460,18 +653,21 @@
     ]);
     state.data = timeline;
     state.sheet = sheet.rows;
-    state.pos = 0; state.frame = -1; state.model = null;
-    buildBars(timeline.iots);
-    $("transformer").textContent = `Transformer ${timeline.transformer_id}`;
+    state.pos = 0; state.frame = -1; state.model = null; state.painted = -1;
+    buildCards(timeline.iots);
     $("maint-download").href = `${API}/maintenance/${encodeURIComponent(transformerId)}?format=csv`;
     const n = timeline.frames.length;
-    $("status").textContent = `${n} hourly readings · ${fmtDay(timeline.start)} – ${fmtDay(timeline.end)} · ${sheet.checks} maintenance checks`;
+    $("status").textContent = `630 kVA · 11 / 0.433 kV · Transformer ${timeline.transformer_id} · ${n} hourly readings · ${fmtDay(timeline.start)} – ${fmtDay(timeline.end)}`;
     const ticks = [0, .25, .5, .75, 1].map((f) => fmtDay(timeline.frames[Math.round(f * (n - 1))].t));
     $("ticks").innerHTML = ticks.map((t) => `<span>${t}</span>`).join("");
-    ["back", "play", "fwd", "speed"].forEach((id) => ($(id).disabled = false));
-    const start = /t=(\d+)/.exec(location.hash);  // e.g. #t=960 opens at hour 960
+    ["back", "play", "fwd", "tick", "speed"].forEach((id) => ($(id).disabled = false));
+    const start = /t=(\d+)/.exec(location.hash);
     state.pos = start ? Math.min(n - 1, Number(start[1])) : 0;
+    drawStrip();
+    if (!chart && window.MetricChart) chart = MetricChart.create({ MONITORS, LABEL, COLOR, GROUP, getState: () => state });
     render(true);
+    const openSlot = /(?:^|[?&])metric=(\d)/.exec(location.search);
+    if (openSlot && chart && chart.slot == null) chart.open(Number(openSlot[1]));
   }
 
   function render(force) {
@@ -479,20 +675,25 @@
     const index = Math.min(frames.length - 1, Math.floor(state.pos));
     const ratio = frames.length > 1 ? state.pos / (frames.length - 1) : 0;
     $("knob").style.left = `${ratio * 100}%`;
-    $("fill").style.width = `${ratio * 100}%`;
     if (index === state.frame && !force) return;
     state.frame = index;
     const frame = frames[index];
     if (!frame) return;
-    $("time").textContent = `${fmtTime(frame.t)} UTC · day ${Math.floor(index / 24) + 1} of ${Math.ceil(frames.length / 24)}`;
+    const days = Math.ceil(frames.length / 24);
+    $("time").textContent = `${fmtTime(frame.t)} UTC · day ${Math.floor(index / 24) + 1} of ${days}`;
+    $("clock").textContent = `${fmtTime(frame.t)} UTC`;
+    $("clock-sub").textContent = `Day ${Math.floor(index / 24) + 1} of ${days}`;
 
     state.data.iots.forEach((iot, i) => {
-      const el = $(`iot-${iot.slot}`), status = frame.s[i], value = frame.v[i];
-      setStatusClass(el, status);
-      el.querySelector(".bar > span").style.width = status ? `${FILL[status]}%` : "0";
-      el.querySelector(".state").textContent = status ? LABEL[status] : "No data";
-      el.querySelector(".value").textContent = value == null ? "—" : `${value.toFixed(1)}${UNIT[iot.unit] ?? ""}`;
+      const el = $(`iot-${iot.slot}`), value = frame.v[i], m = MONITORS[iot.slot];
+      const [num, unit] = value == null ? ["—", ""] : m.fmt(value);
+      el.querySelector(".value").textContent = `${num}${unit}`;
+      const health = window.MetricChart ? MetricChart.healthOf(iot.slot, value, iot) : null;
+      el.querySelector(".bar > span").style.width = health == null ? "0" : `${Math.max(2, health)}%`;
+      el.querySelector(".hp").textContent = health == null ? "" : `${Math.round(health)}%`;
+      el.querySelector(".hp").title = "Health: 100% as new, 0% at the critical limit";
     });
+    if (chart && chart.slot != null) chart.update();
 
     const bad = frame.q.filter(([, code]) => code !== "MISSING");
     const missing = frame.q.length - bad.length;
@@ -500,9 +701,37 @@
       ? `<b>Validation:</b> ${bad.map(([f, c]) => `${f} ${c.toLowerCase().replaceAll("_", " ")}`).join(", ")}${bad.length && missing ? ", " : ""}${missing ? `${missing} missing` : ""}`
       : "All inputs valid";
 
+    paint();
+    renderSheet(frame.t);
+  }
+
+  function paint() {
+    const frame = state.data.frames[state.frame];
+    if (!frame || state.painted === state.frame) return;
+    state.painted = state.frame;
+    const counts = { precision: 0, transformer: 0 };
+    state.data.iots.forEach((iot, i) => {
+      const el = $(`iot-${iot.slot}`), status = frame.s[i];
+      setStatusClass(el, status);
+      el.querySelector(".state").textContent = status ? LABEL[status] : "No data";
+      if (status && status !== "NORMAL") counts[MONITORS[iot.slot].group]++;
+    });
+    for (const [key, info] of Object.entries(TREND_FLAGS)) {
+      const a = state.data.analytics && state.data.analytics[key];
+      if (!a) continue;
+      const card = $(`iot-${a.slot}`), raised = a.flags.some((f) => Date.parse(f.detected_at) <= Date.parse(frame.t));
+      card.classList.toggle("flagged", raised);
+      const badge = card.querySelector(".flag");
+      badge.textContent = info.badge; badge.title = info.title;
+    }
+    $("count-precision").textContent = counts.precision ? `${counts.precision} of 2 need attention` : "All within limits";
+    $("count-transformer").textContent = counts.transformer ? `${counts.transformer} of 5 need attention` : "All within limits";
+    const overall = worst(frame.s);
+    setStatusClass($("overall"), overall);
+    $("overall").textContent = overall ? (overall === "NORMAL" ? "All monitors normal"
+      : `Overall: ${LABEL[overall]} · ${counts.precision + counts.transformer} active`) : "No data";
     twin.setStatuses(frame.s);
     renderModel(frame);
-    renderSheet(frame.t);
   }
 
   function renderModel(frame) {
@@ -510,27 +739,21 @@
     state.model = frame.m;
     const slot = frame.m === "base" ? null : Number(frame.m.replace("iot", ""));
     const status = slot ? frame.s[slot - 1] : null;
-    $("model-name").textContent = slot ? `IOT${slot} · ${state.data.models[frame.m]}` : state.data.models.base;
-    $("model-signal").textContent = slot ? `Signalled: ${LABEL[status]}` : "All IoTs normal";
+    $("model-name").textContent = slot ? `${MONITORS[slot].name} · ${state.data.models[frame.m]}` : state.data.models.base;
+    $("model-signal").textContent = slot ? `${GROUP[MONITORS[slot].group].short} · ${LABEL[status]}` : "All monitors normal";
     setStatusClass($("model-viewport"), status);
     twin.focus(slot);
     signal(frame.id);
   }
 
-  // Tell FastAPI the shown model changed; it calls the Blender bridge. One request in flight.
   async function signal(readingId) {
     if (state.signalBusy) { state.signalPending = readingId; return; }
     state.signalBusy = true;
     try {
-      const response = await fetch(`${API}/twin3d/signal`, {
+      const res = await fetch(`${API}/twin3d/signal`, {
         method: "POST", headers: writeHeaders({ "Content-Type": "application/json" }),
         body: JSON.stringify({ reading_id: readingId, source: "timeline" }),
-      });
-      if (response.status === 401 || response.status === 503) {
-        $("model-call").textContent = "Model signalling needs an API key (enter it when uploading a CSV).";
-        return;
-      }
-      const res = await response.json();
+      }).then((r) => r.json());
       if (res.model_call) {
         const c = res.model_call;
         $("model-call").textContent = `${c.action}(${c.model_id}) ← ${c.previous_model ?? "none"} · ${c.model.blend_file} · ${c.status}`;
@@ -545,30 +768,44 @@
 
   function renderSheet(iso) {
     const until = new Date(iso).getTime();
-    // Sheet is sorted by check_no (= date order); find how many checks are opened by now.
     let lo = 0, hi = state.sheet.length;
     while (lo < hi) { const mid = (lo + hi) >> 1; if (new Date(state.sheet[mid].opened_at).getTime() <= until) lo = mid + 1; else hi = mid; }
-    $("maint-count").textContent = `· ${lo} of ${state.sheet.length}`;
-    const recent = state.sheet.slice(Math.max(0, lo - 40), lo).reverse();
+    $("maint-count").textContent = `· ${lo.toLocaleString()} of ${state.sheet.length.toLocaleString()}`;
+    const shown = (c) => state.filter === "all" || MONITORS[c.iot].group === state.filter;
+    const recent = [];
+    let pinned = null;
+    for (let i = lo - 1; i >= 0; i--) if (state.sheet[i].flag) { pinned = state.sheet[i]; break; }
+    if (pinned && shown(pinned)) recent.push(pinned);
+    for (let i = lo - 1; i >= 0 && recent.length < 40; i--) {
+      const c = state.sheet[i];
+      if (c !== pinned && shown(c)) recent.push(c);
+    }
     $("maint-list").innerHTML = recent.length ? recent.map((c) => {
+      const m = MONITORS[c.iot];
       const resolved = c.resolved_at && new Date(c.resolved_at).getTime() <= until;
-      return `<div class="check s-${c.signal}">
-        <span class="no">#${c.check_no}</span><span class="what">IOT${c.iot} · ${LABEL[c.signal]}</span>
+      return `<div class="check s-${c.signal}${c.flag ? " pinned" : ""}">
+        <span class="no">#${c.check_no}</span><span class="what">${m.name} · ${LABEL[c.signal]}</span>
+        <span class="tags"><span class="tag">${GROUP[m.group].short}</span>${c.flag ? `<span class="tag flagtag">Pinned · ${FLAG_LABEL[c.flag] || c.flag}</span>` : ""}</span>
         <span class="action">${c.recommended_action}</span>
         <span class="when">${c.date} ${c.time_utc} UTC · ${resolved ? `resolved after ${c.duration_hours} h` : "open"}</span>
       </div>`;
     }).join("") : `<div class="empty">No checks yet.</div>`;
   }
 
-  // ---------- playback: 1 day (24 hourly frames) per second at 1x ----------
-  // Wall-clock based, so speed stays exact even if the browser throttles the timer.
+  document.querySelectorAll(".filters [data-filter]").forEach((b) => (b.onclick = () => {
+    document.querySelectorAll(".filters [data-filter]").forEach((x) => x.setAttribute("aria-pressed", x === b));
+    state.filter = b.dataset.filter;
+    if (state.data) renderSheet(state.data.frames[state.frame].t);
+  }));
+
+  // ---------- playback ----------
   function tick() {
     if (!state.data || !Number.isFinite(state.pos)) return setPlaying(false);
     const now = performance.now();
     const dt = (now - state.last) / 1000;
     state.last = now;
     const max = state.data.frames.length - 1;
-    state.pos = Math.min(max, state.pos + dt * state.data.hours_per_second * SPEEDS[state.speed]);
+    state.pos = Math.min(max, state.pos + (dt / state.tick) * SPEEDS[state.speed]);
     render();
     if (state.pos >= max) setPlaying(false);
   }
@@ -581,29 +818,74 @@
   }
   const seek = (pos) => { state.pos = Math.max(0, Math.min(state.data.frames.length - 1, pos)); render(); };
 
-  $("view-reset").onclick = () => twin.focus(state.model && state.model !== "base" ? Number(state.model.replace("iot", "")) : null);
+  const resetView = () => {
+    const slot = state.model && state.model !== "base" ? Number(state.model.replace("iot", "")) : null;
+    if (twin.release) twin.release();
+    if (slot) twin.focus(slot); else twin.resetView();
+  };
+  $("view-reset").onclick = resetView;
+
+  // ---------- free navigation ----------
+  const NAV = {
+    up: () => twin.pan(0, 1), down: () => twin.pan(0, -1), left: () => twin.pan(-1, 0), right: () => twin.pan(1, 0),
+    fwd: () => twin.move(1), back: () => twin.move(-1), zin: () => twin.zoom(0.9), zout: () => twin.zoom(1.1),
+  };
+  let navTimer = null;
+  let navHold = null;
+  const stopNav = () => { clearTimeout(navHold); clearInterval(navTimer); navHold = navTimer = null; };
+  document.querySelectorAll(".nav [data-nav]").forEach((b) => {
+    const act = b.dataset.nav;
+    if (act === "home") { b.onclick = resetView; return; }
+    if (!twin.pan) { b.disabled = true; b.title = "Reload the page (Ctrl+F5): an old copy of twin3d.js is cached"; return; }
+    b.addEventListener("pointerdown", (e) => {
+      e.preventDefault(); stopNav(); NAV[act]();
+      navHold = setTimeout(() => (navTimer = setInterval(NAV[act], 60)), 350);
+    });
+    ["pointerup", "pointerleave", "pointercancel"].forEach((ev) => b.addEventListener(ev, stopNav));
+  });
+  const KEYS = { ArrowUp: "up", ArrowDown: "down", ArrowLeft: "left", ArrowRight: "right", a: "left", d: "right",
+    w: "fwd", s: "back", e: "up", q: "down", "+": "zin", "=": "zin", "-": "zout", _: "zout" };
+  document.addEventListener("keydown", (e) => {
+    if (!twin.pan || e.ctrlKey || e.metaKey || e.altKey) return;
+    if (e.target instanceof Element && e.target.matches("input, textarea, select")) return;
+    if (!$("metric-overlay").hidden) return;
+    const key = e.key.length === 1 ? e.key.toLowerCase() : e.key;
+    if (key === "r") { resetView(); e.preventDefault(); return; }
+    if (KEYS[key]) { NAV[KEYS[key]](); e.preventDefault(); }
+  });
   const linkView = new URLSearchParams(location.search).get("view");
   if (linkView) document.querySelectorAll(".seg [data-mode]").forEach((x) => x.setAttribute("aria-pressed", x.dataset.mode === linkView));
   document.querySelectorAll(".seg [data-mode]").forEach((b) => (b.onclick = () => {
     document.querySelectorAll(".seg [data-mode]").forEach((x) => x.setAttribute("aria-pressed", x === b));
     twin.setMode(b.dataset.mode);
   }));
-  $("explode-btn").onclick = () => twin.explode(twin.t > 0.5 ? 0 : 1, true);
-  $("explode").addEventListener("input", (e) => twin.explode(e.target.value / 100, false));
+  $("explode-btn").onclick = () => twin.explode(1, true);
+  $("assemble-btn").onclick = () => twin.explode(0, true);
   $("oil-toggle").onchange = (e) => twin.setOil(e.target.checked);
   $("labels-toggle").onchange = (e) => twin.setLabels(e.target.checked);
   $("view-spin").onclick = () => { $("view-spin").textContent = twin.toggleSpin() ? "Stop" : "Spin"; };
   $("play").onclick = () => setPlaying(!state.playing);
   $("back").onclick = () => seek(Math.floor(state.pos) - 24);
   $("fwd").onclick = () => seek(Math.floor(state.pos) + 24);
-  $("speed").onclick = () => { state.speed = (state.speed + 1) % SPEEDS.length; $("speed").textContent = `${SPEEDS[state.speed]}×`; };
+  const showRate = () => {
+    const k = SPEEDS[state.speed], secs = +(state.tick / k).toPrecision(3);
+    $("speed").textContent = `${k}×`;
+    $("rate").textContent = `1 hour every ${secs} s` + (k === 1 ? "" : ` (${state.tick} s at ${k}×)`);
+  };
+  $("speed").onclick = () => { state.speed = (state.speed + 1) % SPEEDS.length; showRate(); };
+  $("tick").addEventListener("change", (e) => {
+    const v = Number(e.target.value);
+    state.tick = Number.isFinite(v) && v > 0 ? Math.min(60, Math.max(0.01, v)) : DEFAULT_TICK_S;
+    e.target.value = state.tick;
+    showRate();
+  });
 
   const track = $("track");
   const scrub = (e) => { const r = track.getBoundingClientRect(); seek(((e.clientX - r.left) / r.width) * (state.data.frames.length - 1)); };
   track.addEventListener("pointerdown", (e) => { if (!state.data) return; track.setPointerCapture(e.pointerId); scrub(e); });
   track.addEventListener("pointermove", (e) => { if (track.hasPointerCapture(e.pointerId)) scrub(e); });
 
-  // ---------- data drop: upload CSV, validated server-side ----------
+  // ---------- data drop ----------
   const drop = $("drop");
   async function upload(file) {
     if (!file) return;
@@ -621,6 +903,7 @@
       $("drop-result").textContent = `${body.stored} stored, ${body.rejected} rejected${issues ? ` · ${issues}` : ""}`;
       setPlaying(false);
       await load(body.transformers[0]);
+      loadRisk(body.transformers[0]);
     } catch (e) {
       $("drop-result").textContent = "Upload failed: " + e.message;
     }
@@ -630,12 +913,185 @@
   drop.addEventListener("drop", (e) => { e.preventDefault(); drop.classList.remove("over"); upload(e.dataTransfer.files[0]); });
   $("file").addEventListener("change", (e) => upload(e.target.files[0]));
 
+  // ---------- assistant chatbot ----------------------------------------------------------------
+  const chatBody = $("chat-body");
+  const chatInput = $("chat-input");
+  const chatSend = $("chat-send");
+  let chatBusy = false;
+
+  function chatAddMsg(html, cls) {
+    const div = document.createElement("div");
+    div.className = "msg " + cls;
+    div.innerHTML = html;
+    chatBody.appendChild(div);
+    chatBody.scrollTop = chatBody.scrollHeight;
+    return div;
+  }
+
+  function formatChatResponse(data) {
+    let html = `<div class="answer">${escHtml(data.answer)}</div>`;
+    html += `<div class="meta">${escHtml(data.answer_source === "llm" ? "Gemini" : data.answer_source === "deterministic_fallback" ? "Deterministic fallback" : "Deterministic")}`;
+    if (data.warnings && data.warnings.length) html += ` · ${data.warnings.map(escHtml).join(", ")}`;
+    html += `</div>`;
+    if (data.facts && data.facts.length) {
+      html += `<details class="evidence"><summary>${data.facts.length} cited fact${data.facts.length > 1 ? "s" : ""}</summary>`;
+      data.facts.forEach((f) => { html += `<div class="fact">${escHtml(f.statement)}</div>`; });
+      html += `</details>`;
+    }
+    if (data.risk_assessment) {
+      const ra = data.risk_assessment;
+      if (ra.maintenance_risk_index != null) {
+        html += `<div class="meta">Risk index: ${ra.maintenance_risk_index.toFixed(1)} · ${ra.risk_category.replaceAll("_", " ")}</div>`;
+      }
+    }
+    return html;
+  }
+
+  async function sendChat() {
+    const question = chatInput.value.trim();
+    if (!question || chatBusy) return;
+    const transformerId = state.data?.transformer_id;
+    if (!transformerId) { chatAddMsg("Load transformer data first.", "error"); return; }
+
+    chatAddMsg(escHtml(question), "user");
+    chatInput.value = "";
+    chatBusy = true;
+    chatSend.disabled = true;
+    chatInput.disabled = true;
+    const thinking = chatAddMsg("Thinking…", "thinking");
+
+    try {
+      const resp = await fetch(`${API}/assistant/chat`, {
+        method: "POST",
+        headers: writeHeaders({ "Content-Type": "application/json" }),
+        body: JSON.stringify({ transformer_id: transformerId, question }),
+      });
+      thinking.remove();
+      if (resp.status === 401) {
+        if (askForKey()) {
+          const retry = await fetch(`${API}/assistant/chat`, {
+            method: "POST",
+            headers: writeHeaders({ "Content-Type": "application/json" }),
+            body: JSON.stringify({ transformer_id: transformerId, question }),
+          });
+          if (!retry.ok) throw new Error((await retry.json()).detail || retry.statusText);
+          chatAddMsg(formatChatResponse(await retry.json()), "assistant");
+        } else {
+          chatAddMsg("Authentication required. Enter your API key when prompted.", "error");
+        }
+      } else if (resp.status === 502 || resp.status === 503) {
+        const body = await resp.json().catch(() => ({}));
+        chatAddMsg(`Chatbot backend unavailable: ${escHtml(body.detail || "service not reachable")}`, "error");
+      } else if (resp.status === 504) {
+        chatAddMsg("Request timed out. The chatbot backend may be busy.", "error");
+      } else if (!resp.ok) {
+        const body = await resp.json().catch(() => ({}));
+        chatAddMsg(`Error: ${escHtml(body.detail || resp.statusText)}`, "error");
+      } else {
+        chatAddMsg(formatChatResponse(await resp.json()), "assistant");
+      }
+    } catch (e) {
+      thinking.remove();
+      chatAddMsg(`Failed to reach assistant: ${escHtml(e.message)}`, "error");
+    } finally {
+      chatBusy = false;
+      chatSend.disabled = false;
+      chatInput.disabled = false;
+      chatInput.focus();
+    }
+  }
+
+  chatSend.onclick = sendChat;
+  chatInput.addEventListener("keydown", (e) => { if (e.key === "Enter") sendChat(); });
+
+  // ---------- maintenance risk assessment --------------------------------------------------------
+  const RISK_COLORS = { HIGH_MAINTENANCE_RISK: "var(--critical)", MODERATE_MAINTENANCE_RISK: "var(--warning)", LOW_RECORDED_MAINTENANCE_RISK: "var(--normal)", INSUFFICIENT_EVIDENCE: "var(--muted)" };
+  const RISK_LABELS = { HIGH_MAINTENANCE_RISK: "High maintenance risk", MODERATE_MAINTENANCE_RISK: "Moderate maintenance risk", LOW_RECORDED_MAINTENANCE_RISK: "Low recorded risk", INSUFFICIENT_EVIDENCE: "Insufficient evidence" };
+
+  async function loadRisk(transformerId) {
+    const body = $("risk-body");
+    const source = $("risk-source");
+    body.innerHTML = `<div class="risk-unavailable">Loading risk assessment…</div>`;
+    source.textContent = "";
+    try {
+      const resp = await fetch(`${API}/assistant/risk?transformer_id=${encodeURIComponent(transformerId)}`, {
+        headers: writeHeaders(),
+      });
+      if (resp.status === 401) {
+        body.innerHTML = `<div class="risk-unavailable">API key required for risk assessment.</div>`;
+        return;
+      }
+      if (resp.status === 502 || resp.status === 503) {
+        const err = await resp.json().catch(() => ({}));
+        body.innerHTML = `<div class="risk-unavailable">${escHtml(err.detail || "Risk backend unavailable")}</div>`;
+        return;
+      }
+      if (!resp.ok) {
+        const err = await resp.json().catch(() => ({}));
+        body.innerHTML = `<div class="risk-unavailable">Error: ${escHtml(err.detail || resp.statusText)}</div>`;
+        return;
+      }
+      const data = await resp.json();
+      renderRisk(data);
+    } catch (e) {
+      body.innerHTML = `<div class="risk-unavailable">Risk unavailable: ${escHtml(e.message)}</div>`;
+    }
+  }
+
+  function renderRisk(data) {
+    const body = $("risk-body");
+    const source = $("risk-source");
+    const color = RISK_COLORS[data.risk_category] || "var(--muted)";
+    const label = RISK_LABELS[data.risk_category] || data.risk_category.replaceAll("_", " ");
+
+    if (data.risk_category === "INSUFFICIENT_EVIDENCE") {
+      body.innerHTML = `<div class="risk-body">
+        <div class="risk-header"><span class="risk-cat" style="color:${color}">${label}</span></div>
+        <div style="color:var(--muted)">No maintenance records available for this transformer on the main backend.</div>
+        <div class="risk-disclaimer">${escHtml(data.methodology_disclaimer)}</div>
+      </div>`;
+      source.textContent = data.policy_version;
+      return;
+    }
+
+    let html = `<div class="risk-body">`;
+    html += `<div class="risk-header">`;
+    html += data.maintenance_risk_index != null ? `<span class="risk-score" style="color:${color}">${data.maintenance_risk_index.toFixed(1)}</span>` : "";
+    html += `<span class="risk-cat" style="color:${color}">${label}</span>`;
+    html += `</div>`;
+
+    if (data.contributing_factors && data.contributing_factors.length) {
+      html += `<div class="risk-factors">`;
+      data.contributing_factors.forEach((f) => {
+        const score = f.available && f.score != null ? f.score.toFixed(1) : "—";
+        html += `<span class="label">${f.name.replaceAll("_", " ")}</span><span class="score">${score}</span><span class="weight">${(f.weight).toFixed(0)}%</span>`;
+      });
+      html += `</div>`;
+    }
+
+    if (data.review_flags && data.review_flags.length) {
+      html += `<div class="risk-flags">`;
+      data.review_flags.forEach((f) => { html += `<div class="risk-flag">${escHtml(f.detail)}</div>`; });
+      html += `</div>`;
+    }
+
+    html += `<div class="risk-disclaimer">`;
+    html += escHtml(data.methodology_disclaimer);
+    if (!data.policy_approved) html += `<br>Policy status: unapproved (${escHtml(data.policy_version)})`;
+    html += `<br>Data source: main backend maintenance records (not twin_iot sensor readings)`;
+    html += `</div></div>`;
+
+    body.innerHTML = html;
+    source.textContent = data.policy_version;
+  }
+
+  // ---------- initial data load ----------------------------------------------------------------
   fetch(`${API}/transformers`).then((r) => {
     if (!r.ok) throw new Error(`HTTP ${r.status} from ${API}/transformers (is the twin_iot API running?)`);
     return r.json();
   }).then((list) => {
     if (!list.length) { $("status").textContent = "No data: run scripts/simulate.py or drop a CSV"; return; }
-    return load(list[0].transformer_id);
+    return load(list[0].transformer_id).then(() => loadRisk(list[0].transformer_id));
   }).catch((e) => { $("status").textContent = "API unavailable: " + e.message; });
 })();
 </script>
