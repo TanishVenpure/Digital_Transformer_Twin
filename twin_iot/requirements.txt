@@ -1,9 +1,8 @@
-# Transformer twin IoT layer: API, dashboard server, simulator and tests (Python 3.11+)
+# Transformer twin: API, dashboard server, two-timebar simulator and tests (Python 3.11+)
 fastapi>=0.115,<1
 uvicorn[standard]>=0.30,<1
 pydantic>=2.9,<3
 PyYAML>=6,<7
-psycopg2-binary>=2.9,<3
-python-multipart>=0.0.18,<1
 pytest>=8,<10
-httpx>=0.27,<1  # FastAPI integration tests
+httpx>=0.27,<1           # FastAPI tests
+google-genai>=1.75,<2    # optional Gemini explanations in the assistant (works without a key)

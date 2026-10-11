@@ -9,7 +9,6 @@ COPY twin_iot twin_iot
 COPY dashboard dashboard
 
 WORKDIR /app/twin_iot
-ENV TWIN_DATABASE_URL=postgresql://twin@db:5432/twin_iot \
-    PYTHONUNBUFFERED=1
+ENV PYTHONUNBUFFERED=1
 EXPOSE 8020
 CMD ["python", "-m", "uvicorn", "app.api.main:app", "--host", "0.0.0.0", "--port", "8020"]
