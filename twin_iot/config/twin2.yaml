@@ -78,8 +78,8 @@ timebar2:
   seed: 23
 
 short_circuit:                 # timebar 1 (20 ms per-cycle RMS around each fault) and timebar 2 (through-fault duty)
-  impedance_pct: 4.5           # ASSUMED short-circuit impedance Z% (take it from the nameplate / test report)
-  # Rated short-circuit current I_sc = I_rated x 100 / Z%  (~22 x rated, ~18.7 kA on the LV side): the design
+  impedance_pct: 4.0           # ASSUMED short-circuit impedance Z% (take it from the nameplate / test report)
+  # Rated short-circuit current I_sc = I_rated x 100 / Z%  (25 x rated, ~21 kA on the LV side): the design
   # withstand of IEC 60076-5 (thermal: I_sc for 2 s; mechanical: first asymmetric peak kappa x sqrt(2) x I_sc)
   withstand_s: 2.0
   peak_factor_kappa: 1.8       # asymmetry of the first peak (X/R ~ 10)

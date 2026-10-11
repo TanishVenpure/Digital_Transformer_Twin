@@ -167,7 +167,7 @@ Each precision device fails 2 or 3 times, about every 4 months, and is recalibra
 
 | Part | Formula / rule | Signal |
 |---|---|---|
-| Fault level | Rated short-circuit current I_sc = I_rated × 100 / Z% = 22.2 × rated (18.7 kA LV) with Z = 4.5 % (ASSUMED: take it from the nameplate) | - |
+| Fault level | Rated short-circuit current I_sc = I_rated × 100 / Z% = 25 × rated (21 kA LV) with Z = 4 % (ASSUMED: take it from the nameplate) | - |
 | Detection (per cycle, per phase) | Instantaneous pickup when a phase is ≥ 3 × rated for 1 cycle. A short circuit when that phase's voltage collapses below 80 %; high current with healthy voltage is an instantaneous overcurrent instead. 1 / 2 / 3 phases = line-to-ground / line-to-line / three-phase | **SHORT_CIRCUIT** (critical, trip) |
 | Clearing | Cleared when every phase is below 5 % of rated (breaker open). Still flowing after 150 ms = the main breaker failed and the backup cleared it | **BREAKER_FAILURE** |
 | Internal vs external | Tank pressure jump of ≥ 20 kPa during the fault (arc in the oil) = internal; otherwise a through-fault fed from the transformer | **INTERNAL_FAULT** (do not re-energise) or **FAULT_CLEARED** |
@@ -176,7 +176,7 @@ Each precision device fails 2 or 3 times, about every 4 months, and is recalibra
 
 The simulated day has two faults. At 01:47:12 an LV feeder cable fault (phase Y to ground, about 9 × rated)
 is cleared in 60 ms. At 06:30:05 a three-phase fault at the LV busbar (about 18.6 × rated) is not opened by the
-main breaker; the backup clears it after 240 ms (breaker failure, 70 % of the design force). Each is recorded
+main breaker; the backup clears it after 240 ms (breaker failure, 56 % of the design force). Each is recorded
 per cycle and per phase from 200 ms before to 600 ms after (`timebar1_faults_20ms.csv`), and the transformer
 stays out of service for 20 and 45 minutes. The 1 s stream is the second before the fault; the fault itself is
 only in the 20 ms detail.
