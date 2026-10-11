@@ -196,3 +196,58 @@ def oil_leak_status(measured_l: float, expected_l: float, o: dict[str, Any]) -> 
     if measured_l - expected_l < -o["tolerance_l"]:
         return "WARNING"             # OIL_LEAK
     return "NORMAL"
+
+
+# ---------------------------------------------------------------- insulation (timebar 2)
+# Paper ageing: 1/DP(t) - 1/DP0 = sum k dt,  k = A(w) * exp(-E / (R * T_H))   (IEC 60076-7:2018 Annex A form)
+# Moisture: paper water content WCP (%) -> oil relative saturation RS (%) -> water in oil (ppm) = RS * W_sat(T)
+# DGA: CO + CO2 generated in proportion to the paper ageing (d(1/DP)); the CO share grows with temperature.
+
+GAS_CONSTANT = 8.314
+
+
+def arrhenius_a(wcp_pct: float, ins: dict[str, Any]) -> float:
+    """Pre-exponential factor A (1/h) for the paper water content, log-interpolated between the table points."""
+    pts = [(float(w), float(a)) for w, a in ins["arrhenius_a_per_h"]]   # YAML may read 4.1e10 as text
+    w = min(max(wcp_pct, pts[0][0]), pts[-1][0])
+    for (w0, a0), (w1, a1) in zip(pts, pts[1:]):
+        if w <= w1:
+            frac = (w - w0) / (w1 - w0)
+            return math.exp(math.log(a0) + frac * (math.log(a1) - math.log(a0)))
+    return pts[-1][1]
+
+
+def paper_ageing_k(hotspot_c: float, wcp_pct: float, ins: dict[str, Any]) -> float:
+    """Chain-scission rate k (1/h): d(1/DP)/dt."""
+    return arrhenius_a(wcp_pct, ins) * math.exp(-float(ins["activation_energy_j_mol"]) / (GAS_CONSTANT * (hotspot_c + 273.15)))
+
+
+def water_saturation_ppm(oil_c: float) -> float:
+    """Water solubility of mineral oil (ppm): log10(W_s) = 7.0895 - 1567 / T(K)."""
+    return 10 ** (7.0895 - 1567 / (oil_c + 273.15))
+
+
+def relative_saturation_pct(wcp_pct: float) -> float:
+    """Oil relative saturation in equilibrium with the paper (simplified moisture-equilibrium curve)."""
+    return 100 * (max(wcp_pct, 0.0) / 8.0) ** 1.6
+
+
+def water_in_oil_ppm(wcp_pct: float, oil_c: float) -> float:
+    return relative_saturation_pct(wcp_pct) / 100 * water_saturation_ppm(oil_c)
+
+
+def co2_co_generation_ratio(hotspot_c: float) -> float:
+    """CO2 / CO produced by paper: ~10 up to 80 degC, falling to ~1.5 by 110 degC (paper overheating)."""
+    return max(1.5, min(10.0, 10.0 - (hotspot_c - 80.0) * (8.5 / 30.0)))
+
+
+def insulation_status(dp: float, ins: dict[str, Any]) -> str:
+    if dp <= ins["dp_critical"]:
+        return "CRITICAL"
+    return "WARNING" if dp <= ins["dp_warning"] else "NORMAL"
+
+
+def moisture_status(wcp_pct: float, ins: dict[str, Any]) -> str:
+    if wcp_pct >= ins["wcp_critical_pct"]:
+        return "CRITICAL"
+    return "WARNING" if wcp_pct >= ins["wcp_warning_pct"] else "NORMAL"

@@ -26,13 +26,15 @@ SIGNAL = {"WARNING": "WARNING", "CRITICAL": "CRITICAL", "MAINTENANCE_REQUIRED": 
           "MAINTENANCE": "MAINTENANCE_REQUIRED"}
 MONITOR_NAME = {
     (1, "loading"): "Loading (overload)", (1, "voltage"): "Voltage (primary + secondary)",
-    (1, "oti"): "Top oil (OTI)", (1, "wti"): "Winding (WTI)", (1, "thermal"): "Thermal analytics (IEC 60076-7)",
+    (1, "oti"): "Top oil (OTI)", (1, "wti"): "Winding (WTI)",
     (1, "pressure"): "Tank pressure", (1, "prec_current"): "Current device (CT)",
     (1, "prec_voltage"): "Voltage device (PT)", (1, "prec_temperature"): "Temperature device",
     (2, "oil"): "Oil volume (leak)", (2, "prec_current"): "Current device (CT), daily",
     (2, "prec_voltage"): "Voltage device (PT), daily", (2, "prec_temperature"): "Temperature device, daily",
+    (2, "insulation"): "Paper insulation (ageing)", (2, "moisture"): "Moisture (oil sensor)",
+    (2, "dga"): "Dissolved gases (CO / CO2)",
 }
-FOLLOW_UP = ("_RECALIBRATED", "_REPAIRED")
+FOLLOW_UP = ("_RECALIBRATED", "_REPAIRED", "_RECONDITIONED")
 
 
 def _resolves(follow: dict[str, Any], check: dict[str, Any]) -> bool:
@@ -40,6 +42,8 @@ def _resolves(follow: dict[str, Any], check: dict[str, Any]) -> bool:
         return False
     if follow["type"] == "OIL_LEAK_REPAIRED":
         return check["type"] in ("OIL_LEAK", "MINIMUM_OIL_LEVEL")
+    if follow["type"] == "OIL_RECONDITIONED":       # hot-oil vacuum drying + degassing closes the moisture check
+        return check["type"] == "PAPER_MOISTURE"
     return follow["type"] == check["type"] + "_RECALIBRATED"
 
 

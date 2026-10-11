@@ -18,7 +18,7 @@ def _const(n, v):
 
 def timebar1():
     status = {m: _const(MIN1, "NORMAL") for m in
-              ("loading", "voltage", "oti", "wti", "thermal", "pressure", "prec_current", "prec_voltage", "prec_temperature")}
+              ("loading", "voltage", "oti", "wti", "pressure", "prec_current", "prec_voltage", "prec_temperature")}
     status["oti"][120:] = ["CRITICAL"] * (MIN1 - 120)
     series = {
         "loading_max": _const(MIN1, 80.0), "v_pri_min": _const(MIN1, -1.0), "v_pri_max": _const(MIN1, 2.5),
@@ -41,10 +41,12 @@ def timebar1():
 
 
 def timebar2():
-    status = {m: _const(DAYS2, "NORMAL") for m in ("oil", "prec_current", "prec_voltage", "prec_temperature")}
+    status = {m: _const(DAYS2, "NORMAL") for m in ("oil", "prec_current", "prec_voltage", "prec_temperature",
+                                                     "insulation", "moisture", "dga")}
     status["prec_voltage"][60:] = ["WARNING"] * (DAYS2 - 60)
     series = {"residual": _const(DAYS2, -2.0), "prec_current": _const(DAYS2, [0.2, 0.2, 0.2]),
-              "prec_voltage": _const(DAYS2, [0.1, 0.6, 0.1]), "prec_temperature": _const(DAYS2, [0.1, 0.1, 0.1])}
+              "prec_voltage": _const(DAYS2, [0.1, 0.6, 0.1]), "prec_temperature": _const(DAYS2, [0.1, 0.1, 0.1]),
+              "dp": _const(DAYS2, 615.0), "wcp": _const(DAYS2, 1.9), "co": _const(DAYS2, 300.0)}
     ev = lambda day, mon, level, typ, msg: {"timebar": 2, "monitor": mon, "level": level, "type": typ, "day": day, "message": msg}
     return {
         "timebar": 2, "start": "2026-08-01", "days": DAYS2, "series": series, "status": status,

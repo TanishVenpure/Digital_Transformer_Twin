@@ -85,16 +85,6 @@
           { name: 'WTI', values: s1.wti, color: C.a }, { name: 'Hot spot T_H (IEC estimate)', values: s1.hotspot, color: C.c, dash: '4 3' },
           { name: 'Measured winding (probe)', values: s1.winding_measured, color: C.e }],
           lines: [{ y: L1.wti_alarm_c, label: `WTI alarm ${L1.wti_alarm_c} °C`, level: 'WARNING' }, { y: L1.wti_trip_c, label: `WTI trip ${L1.wti_trip_c} °C`, level: 'CRITICAL' }] }] },
-      { id: 'thermal', tb: 1, name: 'Thermal analytics (IEC 60076-7)', metric: 'residual, ageing, cooling · never a trip · 1 s',
-        value: (m) => s1.residual[m], unit: 'K', signed: true, status: (m) => tb1.status.thermal[m], slot: 7,
-        charts: () => [
-          { title: 'Winding thermal residual R_W = measured − expected (K)', unit: 'K', series: [{ name: 'R_W', values: s1.residual, color: C.a }],
-            lines: [{ y: L1.residual_min_k, label: `${L1.residual_min_k} K excess-heating level`, level: 'MAINTENANCE_REQUIRED' }] },
-          { title: 'Relative ageing rate V = 2^((T_H − 98) / 6)', unit: '', series: [{ name: 'V', values: s1.ageing_rate, color: C.c }],
-            lines: [{ y: 1, label: 'Design rate (V = 1)', level: 'WARNING' }] },
-          { title: 'Equivalent ageing L_EQ = Σ V·dt (hours) and ageing ratio L_EQ / t', unit: 'h', series: [
-            { name: 'L_EQ (h)', values: s1.ageing_hours, color: C.d }, { name: 'Ageing ratio', values: s1.ageing_ratio, color: C.b, dash: '4 3' }] },
-          { title: 'Load factor K = I / I_rated', unit: '', series: [{ name: 'K', values: s1.load_factor, color: C.e }] }] },
       { id: 'pressure', tb: 1, name: 'Tank pressure', metric: `sealed tank, ideal gas · warning ${L1.pressure_warning_kpa}, limit ${L1.pressure_limit_kpa} kPa (assumed) · 1 min`,
         value: (m) => s1.pressure_abs[m], unit: 'kPa', digits: 1, status: (m) => tb1.status.pressure[m], slot: 6,
         charts: () => [
@@ -113,6 +103,30 @@
           { title: 'Residual R = V_meas − V_exp,noleak (L)', unit: 'L', series: [{ name: 'R', values: s2.residual, color: C.a }, { name: '−L_cum (cumulative leak)', values: s2.cumulative_leak.map((x) => -x), color: C.c, dash: '4 3' }],
             lines: [{ y: -L2.tolerance_l, label: `Leak alarm −${L2.tolerance_l} L`, level: 'WARNING' }] },
           { title: 'Daily mean oil temperature (°C)', unit: '°C', series: [{ name: 'T_oil', values: s2.oil_temperature, color: C.c }] }] },
+      // insulation (paper) on the 1-year timebar: ageing from the daily hot spot, moisture IoT, online DGA IoT
+      { id: 'insulation', tb: 2, name: 'Paper insulation (ageing)', metric: `estimated DP from the hot spot and paper moisture · warning DP ${L2.dp_warning}, critical ${L2.dp_critical} · daily`,
+        value: (d) => s2.dp[d], unit: 'DP', digits: 0, status: (d) => tb2.status.insulation[d], slot: 7,
+        charts: () => [
+          { title: 'Estimated degree of polymerisation DP (1/DP grows by A(w)·e^(−E/RT_H) per hour)', unit: '', series: [{ name: 'DP', values: s2.dp, color: C.a }] },
+          { title: 'Equivalent ageing per day (h, IEC V = 2^((T_H − 98)/6))', unit: 'h', series: [{ name: 'Ageing h/day', values: s2.ageing_hours, color: C.c }],
+            lines: [{ y: L2.ageing_day_warning_h, label: `${L2.ageing_day_warning_h} h in a day`, level: 'WARNING' }] },
+          { title: 'Cumulative loss of life (days)', unit: 'd', series: [{ name: 'Loss of life', values: s2.loss_of_life_days, color: C.d }] },
+          { title: 'Daily hot spot (°C)', unit: '°C', series: [{ name: 'Max', values: s2.hotspot_max, color: C.r }, { name: 'Mean', values: s2.hotspot_mean, color: C.b, dash: '4 3' }] }] },
+      { id: 'moisture', tb: 2, name: 'Moisture (oil sensor)', metric: `paper water from the oil sensor · warning ${L2.wcp_warning_pct} %, critical ${L2.wcp_critical_pct} % · daily`,
+        value: (d) => s2.wcp[d], unit: '%', digits: 2, status: (d) => tb2.status.moisture[d], slot: 5,
+        charts: () => [
+          { title: 'Estimated paper water content WCP (%)', unit: '%', series: [{ name: 'WCP', values: s2.wcp, color: C.a }],
+            lines: [{ y: L2.wcp_warning_pct, label: `Wet ${L2.wcp_warning_pct} %`, level: 'WARNING' }, { y: L2.wcp_critical_pct, label: `Very wet ${L2.wcp_critical_pct} %`, level: 'CRITICAL' }] },
+          { title: 'Water in oil (ppm) - swings with oil temperature even when the paper is not wetter', unit: 'ppm', series: [{ name: 'Water in oil', values: s2.water_ppm, color: C.e }] },
+          { title: 'Oil relative saturation (%) and daily oil temperature (°C)', unit: '', series: [{ name: 'RS %', values: s2.rs, color: C.d }, { name: 'T_oil °C', values: s2.oil_temperature, color: C.c, dash: '4 3' }] }] },
+      { id: 'dga', tb: 2, name: 'Dissolved gases (CO / CO₂)', metric: `online DGA · typical CO ${L2.co_typical_ppm}, CO₂ ${L2.co2_typical_ppm} ppm · weekly CO₂/CO < ${L2.ratio_limit} · daily`,
+        value: (d) => s2.co[d], unit: 'ppm CO', digits: 0, status: (d) => tb2.status.dga[d], slot: 6,
+        charts: () => [
+          { title: 'Carbon monoxide CO (ppm)', unit: 'ppm', series: [{ name: 'CO', values: s2.co, color: C.r }],
+            lines: [{ y: L2.co_typical_ppm, label: `Typical ${L2.co_typical_ppm} ppm`, level: 'WARNING' }] },
+          { title: 'Carbon dioxide CO₂ (ppm)', unit: 'ppm', series: [{ name: 'CO₂', values: s2.co2, color: C.a }] },
+          { title: 'Weekly increment ratio ΔCO₂ / ΔCO (below 3 = paper overheated)', unit: '', series: [{ name: 'ΔCO₂/ΔCO', values: s2.co2_co_ratio_week, color: C.c }],
+            lines: [{ y: L2.ratio_limit, label: `${L2.ratio_limit} paper overheating`, level: 'WARNING' }] }] },
       { id: 'y_prec_current', tb: 2, name: 'Current device (CT)', ...prec(tb2, 'current', 'daily'), slot: 1 },
       { id: 'y_prec_voltage', tb: 2, name: 'Voltage device (PT)', ...prec(tb2, 'voltage', 'daily'), slot: 2 },
       { id: 'y_prec_temperature', tb: 2, name: 'Temperature device', ...prec(tb2, 'temperature', 'daily'), slot: 7 },
@@ -349,7 +363,7 @@
           <span class="when">${e.timebar === 1 ? `${e.start.slice(11, 19)}${e.end && e.end !== e.start ? '–' + e.end.slice(11, 19) : ''} UTC` : e.start}</span>
         </div>`).join('') : '<div class="empty">No signals yet. Press play on a timebar.</div>';
       $('ev-list').querySelectorAll('[data-mon]').forEach((x) => (x.onclick = () => {
-        const id = x.dataset.mon === 'thermal' || mons.some((m) => m.id === x.dataset.mon) ? x.dataset.mon : null;
+        const id = mons.some((m) => m.id === x.dataset.mon) ? x.dataset.mon : null;
         if (id) openModal(id);
       }));
     }

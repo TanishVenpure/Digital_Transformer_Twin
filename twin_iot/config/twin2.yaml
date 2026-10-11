@@ -76,3 +76,34 @@ timebar2:
   start: "2026-07-01"
   days: 365
   seed: 23
+
+insulation:                    # timebar 2: paper insulation, moisture and dissolved gases (daily)
+  # Paper ageing (IEC 60076-7:2018 Annex A kinetics, Kraft paper not thermally upgraded - verify the
+  # constants against the edition in use): 1/DP(t) - 1/DP0 = sum k dt,  k = A(w) exp(-E / (R T_H))
+  activation_energy_j_mol: 128000.0
+  arrhenius_a_per_h:           # A by paper water content (%): log-interpolated between points
+    - [0.5, 4.1e10]
+    - [1.5, 1.5e11]
+    - [3.5, 4.5e11]
+  dp_initial: 620.0            # ASSUMED: unit in service ~10 years (new paper ~1000)
+  dp_warning: 400.0            # plan a furan (2-FAL) lab test / life assessment
+  dp_critical: 250.0           # paper near end of life
+  ageing_day_warning_h: 6.0    # equivalent ageing in one day (IEC V) above this -> ACCELERATED_INSULATION_AGEING
+  # Moisture: paper water content (WCP, %) is the state; the oil sensor reads relative saturation and ppm
+  wcp_initial_pct: 1.9
+  wcp_warning_pct: 2.5         # moderately wet paper (IEEE C57.106 / CIGRE guidance: dry < 2 %, wet > 3 %)
+  wcp_critical_pct: 3.5
+  water_per_inv_dp: 400.0      # % paper water produced per unit of 1/DP (cellulose scission releases water)
+  ingress_pct_per_day: 0.02    # humid air enters while the gasket leak is open
+  drying_pct: 0.8              # oil reconditioning (hot-oil vacuum drying) removes this much paper water
+  reconditioning_delay_days: 15   # after the moisture warning
+  # Dissolved gases (online DGA): CO and CO2 come from the paper; generation follows the paper ageing rate
+  co_initial_ppm: 280.0
+  co2_initial_ppm: 2600.0
+  gas_ppm_per_inv_dp: 1.6e+8    # total CO + CO2 generated per unit of 1/DP (ASSUMED: ~+1500 ppm CO2 a year at this load)
+  co_typical_ppm: 850.0        # IEC 60599 typical (90 %) upper values: above = WARNING
+  co2_typical_ppm: 14000.0
+  ratio_limit: 3.0             # weekly increments: CO2 / CO < 3 with CO rising -> paper overheating
+  ratio_min_co_increase_ppm: 10.0
+  degassed_co_ppm: 30.0        # after vacuum degassing
+  degassed_co2_ppm: 300.0

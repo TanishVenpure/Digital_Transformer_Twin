@@ -166,3 +166,52 @@ def test_out_of_service_is_consistent(payloads):
 def test_load_factor_keeps_the_overload_surge(payloads):
     s = payloads["timebar1"]["series"]
     assert max(x for x in s["load_factor"] if x) == pytest.approx(max(x for x in s["loading_max"] if x) / 100, rel=0.02)
+
+
+def test_measured_winding_is_never_drawn_below_the_hot_spot(payloads):
+    """The probe sits at the hot spot: equal when healthy, above it with a blocked duct (same per-minute max)."""
+    s = payloads["timebar1"]["series"]
+    pairs = [(w, h) for w, h in zip(s["winding_measured"], s["hotspot"]) if w is not None and h is not None]
+    assert pairs and min(w - h for w, h in pairs) > -0.5
+
+
+# ---------------------------------------------------------------- insulation (timebar 2)
+
+INS = CFG["insulation"]
+
+
+def test_paper_ageing_faster_when_hotter_and_wetter():
+    assert f.paper_ageing_k(110, 1.9, INS) > 10 * f.paper_ageing_k(80, 1.9, INS)
+    assert f.paper_ageing_k(90, 3.0, INS) > f.paper_ageing_k(90, 1.0, INS)
+    assert f.arrhenius_a(1.5, INS) == pytest.approx(1.5e11)
+
+
+def test_water_in_oil_rises_with_temperature_for_the_same_paper():
+    assert f.water_in_oil_ppm(2.0, 60) > f.water_in_oil_ppm(2.0, 40)
+    assert f.relative_saturation_pct(3.0) > f.relative_saturation_pct(2.0)
+
+
+def test_hot_paper_makes_relatively_more_co():
+    assert f.co2_co_generation_ratio(70) == pytest.approx(10.0)
+    assert f.co2_co_generation_ratio(115) < INS["ratio_limit"]
+
+
+def test_year_shows_insulation_moisture_and_dga_signals(payloads):
+    tb = payloads["timebar2"]
+    types = [e["type"] for e in tb["events"]]
+    for t in ("ACCELERATED_INSULATION_AGEING", "DGA_PAPER_OVERHEATING", "PAPER_MOISTURE", "OIL_RECONDITIONED"):
+        assert t in types, t
+    s = tb["series"]
+    assert s["dp"][0] > s["dp"][-1]                                   # paper only ages
+    day = tb["limits"]["timebar1_day"]
+    assert s["ageing_hours"][day] > 10 * s["ageing_hours"][day - 1]    # the timebar-1 overheating day
+    assert all(s["dp"][i + 1] <= s["dp"][i] + 1e-6 for i in range(len(s["dp"]) - 1))
+
+
+def test_reconditioning_dries_the_paper_and_degasses_the_oil(payloads):
+    tb = payloads["timebar2"]
+    d = next(e["day"] for e in tb["events"] if e["type"] == "OIL_RECONDITIONED")
+    s = tb["series"]
+    assert s["wcp"][d] < s["wcp"][d - 1] and s["co"][d] < 0.2 * s["co"][d - 1]
+    leak2 = [e["day"] for e in tb["events"] if e["type"] == "OIL_LEAK"][-1]
+    assert s["wcp"][d - 1] > s["wcp"][leak2 - 20]                     # humid air got in while the gasket leaked

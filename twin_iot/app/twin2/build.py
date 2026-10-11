@@ -12,7 +12,7 @@ Payloads: timebar1.json (1-minute resolution for playback + the 20 ms windows), 
 """
 import csv
 import json
-from datetime import timedelta
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -130,24 +130,25 @@ def timebar1_events(d: dict[str, Any], flags: dict[str, list], cfg: dict[str, An
             add(f"{monitor.upper()}_TRIP", "CRITICAL", a, b, monitor,
                 f"{monitor.upper()} reached the {trip:.0f} degC trip setting ({max(sec[temp][a:b]):.1f} degC).")
     for e in d["events"]:   # breaker operations
-        add(e["type"], e["level"], e["t"], e["t"] + 1, "thermal" if "THERMAL" in e["type"] else "loading", e["message"])
-    names = {"top_oil_rise_over_limit": ("TOP_OIL_RISE_OVER_LIMIT", "WARNING", "thermal",
+        mon = ("oti" if "on OTI" in e["message"] else "wti") if "THERMAL" in e["type"] else "loading"
+        add(e["type"], e["level"], e["t"], e["t"] + 1, mon, e["message"])
+    names = {"top_oil_rise_over_limit": ("TOP_OIL_RISE_OVER_LIMIT", "WARNING", "oti",
                                          f"Top-oil rise over ambient above {th['top_oil_rise_limit_k']:.0f} K (analytics only, not a trip)."),
-             "cooling_degradation": ("COOLING_DEGRADATION", "MAINTENANCE_REQUIRED", "thermal",
+             "cooling_degradation": ("COOLING_DEGRADATION", "MAINTENANCE_REQUIRED", "oti",
                                      f"Measured top-oil rise more than {th['cooling_ratio_limit']:.2f} x the IEC model over "
                                      f"{th['cooling_window_min']} min: radiators not cooling as designed (ONAN: check radiator valves, blocked fins)."),
-             "winding_excess_heating": ("WINDING_EXCESS_HEATING", "MAINTENANCE_REQUIRED", "thermal",
+             "winding_excess_heating": ("WINDING_EXCESS_HEATING", "MAINTENANCE_REQUIRED", "wti",
                                         f"Winding {th['residual_min_k']:.1f} K or more above the IEC model and growing for "
                                         f"{th['residual_windows']} windows of {th['residual_window_min']} min (scaled from the weekly "
                                         "review for a one-day timebar): blocked ducts / winding fault."),
-             "accelerated_thermal_ageing": ("ACCELERATED_THERMAL_AGEING", "WARNING", "thermal",
+             "accelerated_thermal_ageing": ("ACCELERATED_THERMAL_AGEING", "WARNING", "wti",
                                             f"Mean relative ageing rate above {th['ageing_ratio_limit']:.0f} over "
                                             f"{th['ageing_window_min']} min: insulation ageing faster than design.")}
     for key, (kind, level, monitor, message) in names.items():
         for a, b in _runs(flags[key], bool, gap=900):
             add(kind, level, a, b, monitor, message)
     for a, b in _runs(sec["probe_valid"], lambda v: not v):
-        add("WINDING_PROBE_INVALID", "WARNING", a, b, "thermal",
+        add("WINDING_PROBE_INVALID", "WARNING", a, b, "wti",
             f"Winding temperature probe returned no valid reading for {b - a} s: residual marked no-data, no trip raised.")
     prs = d["pressure"]
     for a, b in _runs([r["status"] for r in prs], lambda v: v == "WARNING", gap=15):
@@ -183,7 +184,12 @@ def build(cfg: dict[str, Any] | None = None, out_dir: Path | None = None) -> dic
     out_dir = out_dir or OUT_DIR
     out_dir.mkdir(parents=True, exist_ok=True)
     d1 = timebar1.simulate(cfg)
-    d2 = timebar2.simulate(cfg)
+    # the timebar-1 day is one day of the timebar-2 year: its per-minute hot spot feeds the insulation model
+    hs = d1["sec"]["hotspot_temperature_estimated"]
+    day_index = (d1["day0"].date() - datetime.fromisoformat(cfg["timebar2"]["start"]).date()).days
+    override = ({"day": day_index, "hotspot_minutes": [max(hs[m * 60:(m + 1) * 60]) for m in range(len(hs) // 60)]}
+                if 0 <= day_index < cfg["timebar2"]["days"] else None)
+    d2 = timebar2.simulate(cfg, override)
     sec = d1["sec"]
     flags = thermal_flags(sec, cfg)
     ev1 = timebar1_events(d1, flags, cfg)
@@ -207,7 +213,8 @@ def build(cfg: dict[str, Any] | None = None, out_dir: Path | None = None) -> dic
         "top_oil_expected": agg("top_oil_expected", mean), "top_oil_rise_measured": agg("top_oil_rise_measured", mean),
         "top_oil_rise_expected": agg("top_oil_rise_expected", mean),
         "hotspot": agg("hotspot_temperature_estimated", max), "wti": agg("wti", max),
-        "winding_measured": agg("winding_measured", mean), "winding_expected": agg("winding_expected", mean),
+        # same per-minute reduction (max) as hot spot and WTI, so lines that are equal second by second overlap
+        "winding_measured": agg("winding_measured", max), "winding_expected": agg("winding_expected", max),
         "residual": agg("winding_thermal_residual", mean), "ageing_rate": agg("relative_ageing_rate", mean),
         "ageing_hours": agg("equivalent_ageing_hours", max), "ageing_ratio": agg("ageing_ratio", max),
         "energized": [all(sec["energized"][m * 60:(m + 1) * 60]) for m in range(n_min)],
@@ -265,7 +272,9 @@ def build(cfg: dict[str, Any] | None = None, out_dir: Path | None = None) -> dic
     # ---------- timebar 2
     rows = d2["rows"]
     ev2 = []
-    monitor_of = {"OIL_LEAK": "oil", "MINIMUM_OIL_LEVEL": "oil", "OIL_LEAK_REPAIRED": "oil"}
+    monitor_of = {"OIL_LEAK": "oil", "MINIMUM_OIL_LEVEL": "oil", "OIL_LEAK_REPAIRED": "oil",
+                  "ACCELERATED_INSULATION_AGEING": "insulation", "PAPER_MOISTURE": "moisture",
+                  "OIL_RECONDITIONED": "moisture", "DGA_PAPER_OVERHEATING": "dga"}
     for e in d2["events"]:
         mon = monitor_of.get(e["type"]) or "prec_" + e["type"].split("_")[1].lower()
         ev2.append({"timebar": 2, "type": e["type"], "level": e["level"], "monitor": mon, "day": e["day"],
@@ -276,16 +285,31 @@ def build(cfg: dict[str, Any] | None = None, out_dir: Path | None = None) -> dic
                       "volume_expected": [r["volume_expected_noleak"] for r in rows],
                       "volume_measured": [r["volume_measured"] for r in rows], "residual": [r["residual"] for r in rows],
                       "cumulative_leak": [r["cumulative_leak"] for r in rows],
+                      **{key: [r[key] for r in rows] for key in (
+                          "hotspot_max", "hotspot_mean", "ageing_hours", "loss_of_life_days", "dp", "wcp", "rs",
+                          "water_ppm", "co", "co2", "co_week", "co2_week", "co2_co_ratio_week")},
                       **{f"prec_{dev}": [r[dev] for r in rows] for dev in timebar2.DEVICES}},
            "status": {"oil": [r["oil_status"] for r in rows],
+                      "insulation": [r["insulation_status"] for r in rows],
+                      "moisture": [r["moisture_status"] for r in rows],
+                      "dga": [r["dga_status"] for r in rows],
                       **{f"prec_{dev}": [r[f"{dev}_status"] for r in rows] for dev in timebar2.DEVICES}},
            "limits": {"tolerance_l": o["tolerance_l"], "minimum_volume_l": o["minimum_volume_l"],
-                      "reference_volume_l": o["reference_volume_l"], "precision_max_pct": cfg["precision"]["max_deviation_pct"]}}
+                      "reference_volume_l": o["reference_volume_l"], "precision_max_pct": cfg["precision"]["max_deviation_pct"],
+                      **{k: cfg["insulation"][k] for k in ("dp_initial", "dp_warning", "dp_critical", "ageing_day_warning_h",
+                                                           "wcp_warning_pct", "wcp_critical_pct", "co_typical_ppm",
+                                                           "co2_typical_ppm", "ratio_limit")},
+                      "timebar1_day": override["day"] if override else None}}
 
     (out_dir / "timebar1.json").write_text(json.dumps(tb1, separators=(",", ":")), encoding="utf-8")
     (out_dir / "timebar2.json").write_text(json.dumps(tb2, separators=(",", ":")), encoding="utf-8")
     _write_csvs(out_dir, d1, flags, d2, ev1 + ev2)
     return {"timebar1": tb1, "timebar2": tb2}
+
+
+INSULATION_COLUMNS = ("hotspot_max", "hotspot_mean", "ageing_hours", "loss_of_life_days", "dp", "wcp", "rs", "water_ppm",
+                      "co", "co2", "co_week", "co2_week", "co2_co_ratio_week", "insulation_status", "moisture_status",
+                      "dga_status")
 
 
 def _write_csvs(out_dir: Path, d1, flags, d2, events) -> None:
@@ -338,10 +362,10 @@ def _write_csvs(out_dir: Path, d1, flags, d2, events) -> None:
     write("timebar2_daily.csv",
           ["date", "oil_temperature", "volume_expected_noleak", "volume_measured", "residual", "cumulative_leak",
            "oil_status", *[f"{dev}_dev_{ph}_pct" for dev in timebar2.DEVICES for ph in "RYB"],
-           *[f"{dev}_status" for dev in timebar2.DEVICES]],
+           *[f"{dev}_status" for dev in timebar2.DEVICES], *INSULATION_COLUMNS],
           ([r["date"], r["oil_temperature"], r["volume_expected_noleak"], r["volume_measured"], r["residual"],
             r["cumulative_leak"], r["oil_status"], *[v for dev in timebar2.DEVICES for v in r[dev]],
-            *[r[f"{dev}_status"] for dev in timebar2.DEVICES]] for r in d2["rows"]))
+            *[r[f"{dev}_status"] for dev in timebar2.DEVICES], *[r[c] for c in INSULATION_COLUMNS]] for r in d2["rows"]))
     write("events.csv", ["timebar", "start", "end", "type", "level", "monitor", "message"],
           ([e["timebar"], e["start"], e.get("end", e["start"]), e["type"], e["level"], e["monitor"], e["message"]]
            for e in events))
