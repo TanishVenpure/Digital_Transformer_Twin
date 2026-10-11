@@ -76,3 +76,22 @@ timebar2:
   start: "2026-07-01"
   days: 365
   seed: 23
+
+short_circuit:                 # timebar 1 (20 ms per-cycle RMS around each fault) and timebar 2 (through-fault duty)
+  impedance_pct: 4.5           # ASSUMED short-circuit impedance Z% (take it from the nameplate / test report)
+  # Rated short-circuit current I_sc = I_rated x 100 / Z%  (~22 x rated, ~18.7 kA on the LV side): the design
+  # withstand of IEC 60076-5 (thermal: I_sc for 2 s; mechanical: first asymmetric peak kappa x sqrt(2) x I_sc)
+  withstand_s: 2.0
+  peak_factor_kappa: 1.8       # asymmetry of the first peak (X/R ~ 10)
+  rated_current_density_a_mm2: 3.0   # ASSUMED copper current density at rated current
+  winding_limit_c: 250.0       # IEC 60076-5 maximum average winding temperature after a short circuit (copper)
+  # protection (instantaneous overcurrent element)
+  pickup_multiple: 3.0         # x rated: instantaneous pickup (well above the 120 % overload trip)
+  trip_cycles: 1               # trip decided after the pickup has held this many cycles (20 ms each)
+  sag_pct: 80.0                # faulted-phase voltage below 80 % of nominal = short circuit (not overload / inrush)
+  cleared_pct: 5.0             # current below 5 % of rated = breaker open
+  breaker_failure_ms: 150.0    # fault still flowing this long after pickup = breaker failure (backup cleared it)
+  pressure_surge_kpa: 20.0     # tank pressure jump during the fault = internal fault (arc in the oil)
+  # timebar 2: cumulative through-fault duty
+  severe_force_pct: 25.0       # a fault above 25 % of the design peak force counts as severe
+  severe_faults_warning: 3     # this many severe through-faults -> THROUGH_FAULT_DUTY (winding tests)

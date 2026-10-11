@@ -101,6 +101,12 @@
           { title: 'Headspace pressure, absolute (kPa)', unit: 'kPa', series: [{ name: 'P abs', values: s1.pressure_abs, color: C.a }, { name: 'Gauge', values: s1.pressure_gauge, color: C.m, dash: '4 3' }],
             lines: [{ y: L1.pressure_warning_kpa, label: `Warning ${L1.pressure_warning_kpa} kPa`, level: 'WARNING' }, { y: L1.pressure_limit_kpa, label: `Limit ${L1.pressure_limit_kpa} kPa (assumed)`, level: 'CRITICAL' }] },
           { title: 'Oil expansion and remaining headspace (L)', unit: 'L', series: [{ name: 'Headspace', values: s1.headspace, color: C.e }, { name: 'Oil expansion', values: s1.oil_expansion, color: C.c }] }] },
+      { id: 'fault', tb: 1, name: 'Short-circuit protection', metric: `instantaneous ≥ ${L1.sc_pickup_multiple} × rated with voltage collapse · rated I_sc ${L1.short_circuit_multiple} × (${L1.short_circuit_ka_lv} kA, Z ${L1.impedance_pct} %) · 20 ms`,
+        value: (m) => { let n = 0; for (let k = 0; k <= m; k++) if (s1.fault_peak_pct[k] != null) n++; return n; }, unit: 'faults', digits: 0,
+        status: (m) => tb1.status.fault[m], slot: 3, windows: 'FAULT',
+        charts: () => [{ title: 'Short-circuit peak current per fault (× rated); open the 20 ms detail above for each fault', unit: '×', series: [
+          { name: 'Peak (× rated)', values: s1.fault_peak_pct.map((v) => (v == null ? null : v / 100)), color: C.r, dots: true, width: 0.01 }],
+          lines: [{ y: L1.sc_pickup_multiple, label: `Pickup ${L1.sc_pickup_multiple} ×`, level: 'CRITICAL' }, { y: L1.short_circuit_multiple, label: `Rated I_sc ${L1.short_circuit_multiple} ×`, level: 'WARNING' }] }] },
       { id: 'prec_current', tb: 1, name: 'Current device (CT)', ...prec(tb1, 'current', '1 min'), slot: 1 },
       { id: 'prec_voltage', tb: 1, name: 'Voltage device (PT)', ...prec(tb1, 'voltage', '1 min'), slot: 2 },
       { id: 'prec_temperature', tb: 1, name: 'Temperature device', ...prec(tb1, 'temperature', '1 min'), slot: 7 },
@@ -113,6 +119,16 @@
           { title: 'Residual R = V_meas − V_exp,noleak (L)', unit: 'L', series: [{ name: 'R', values: s2.residual, color: C.a }, { name: '−L_cum (cumulative leak)', values: s2.cumulative_leak.map((x) => -x), color: C.c, dash: '4 3' }],
             lines: [{ y: -L2.tolerance_l, label: `Leak alarm −${L2.tolerance_l} L`, level: 'WARNING' }] },
           { title: 'Daily mean oil temperature (°C)', unit: '°C', series: [{ name: 'T_oil', values: s2.oil_temperature, color: C.c }] }] },
+      { id: 'through_faults', tb: 2, name: 'Through-fault duty', metric: `short circuits carried · severe ≥ ${L2.severe_force_pct} % of design force · winding tests after ${L2.severe_faults_warning} severe · daily`,
+        value: (d) => s2.through_faults[d], unit: 'faults', digits: 0, status: (d) => tb2.status.through_faults[d], slot: 3,
+        charts: () => [
+          { title: 'Through-faults: total and severe since the last winding test', unit: '', series: [
+            { name: 'Total', values: s2.through_faults, color: C.a }, { name: 'Severe since test', values: s2.through_faults_severe, color: C.r }],
+            lines: [{ y: L2.severe_faults_warning, label: `${L2.severe_faults_warning} severe → winding tests`, level: 'MAINTENANCE_REQUIRED' }] },
+          { title: 'Peak force of each through-fault (% of the IEC 60076-5 design withstand)', unit: '%', series: [
+            { name: 'Force %', values: s2.through_fault_force_pct, color: C.c, dots: true, width: 0.01 }],
+            lines: [{ y: L2.severe_force_pct, label: `Severe ${L2.severe_force_pct} %`, level: 'WARNING' }] },
+          { title: 'Cumulative I²t (% of one 2 s withstand)', unit: '%', series: [{ name: 'I²t', values: s2.through_fault_i2t_pct, color: C.d }] }] },
       { id: 'y_prec_current', tb: 2, name: 'Current device (CT)', ...prec(tb2, 'current', 'daily'), slot: 1 },
       { id: 'y_prec_voltage', tb: 2, name: 'Voltage device (PT)', ...prec(tb2, 'voltage', 'daily'), slot: 2 },
       { id: 'y_prec_temperature', tb: 2, name: 'Temperature device', ...prec(tb2, 'temperature', 'daily'), slot: 7 },
@@ -176,6 +192,10 @@
         d += `${pen ? 'L' : 'M'}${X(i).toFixed(1)},${Y(v).toFixed(1)}`; pen = true;
       }
       el('path', { d, fill: 'none', stroke: s.color, 'stroke-width': s.width || 1.6, 'stroke-dasharray': s.dash || 'none', 'stroke-linejoin': 'round' }, g);
+      if (s.dots) for (let i = a; i <= b; i++) {   // sparse series (one value per event): draw each point
+        const v = s.values[i];
+        if (v != null && Number.isFinite(v)) el('circle', { cx: X(i), cy: Y(v), r: 4.5, fill: s.color, stroke: '#0b0f14', 'stroke-width': 1.5 }, g);
+      }
     }
     const legend = el('g', {}, svg);
     spec.series.forEach((s, k) => {
@@ -382,13 +402,33 @@
       for (const spec of m.charts()) drawChart(box, spec, ctx);
       // 20 ms windows for the electrical monitors
       if (m.windows) {
-        const wins = tb1.windows.filter((w) => (m.windows === 'OVERLOAD' ? w.kind === 'OVERLOAD' : w.kind !== 'OVERLOAD'));
+        const kinds = { OVERLOAD: ['OVERLOAD'], VOLTAGE: ['OVERVOLTAGE', 'UNDERVOLTAGE'], FAULT: ['FAULT'] }[m.windows];
+        const wins = tb1.windows.filter((w) => kinds.includes(w.kind));
         const bar = document.createElement('div'); bar.className = 'win-bar';
         bar.innerHTML = '<span>20 ms detail (per-cycle RMS):</span>' + wins.map((w) => `<button data-w="${w.id}" aria-pressed="${state.win === w.id}">${w.id.replaceAll('_', ' ')} · ${w.start.slice(11, 19)}</button>`).join('');
         box.prepend(bar);
         bar.querySelectorAll('[data-w]').forEach((b) => (b.onclick = () => { state.win = state.win === b.dataset.w ? null : b.dataset.w; renderModal(); }));
         const w = wins.find((x) => x.id === state.win);
-        if (w) {
+        if (w && w.kind === 'FAULT') {
+          // short circuit: per-phase current and voltage every cycle, with the protection timing and the effects
+          const L = tb1.limits, det = w.detection || {}, eff = w.effects || {}, t0 = Date.parse(w.start);
+          const ctxw = { range: [0, w.i_pct.length - 1], cursor: null, events: [], xLabel: (k) => new Date(t0 + k * w.dt * 1000).toISOString().slice(11, 22) };
+          const phase = (rows, n) => rows.map((r) => r[n]);
+          const info = document.createElement('div'); info.className = 'win-info';
+          info.innerHTML = `<b>${det.fault || det.kind || ''}</b> · peak ${(det.peak_current_pct / 100).toFixed(1)} × rated · voltage down to ${det.min_voltage_pct} % · `
+            + `pickup → trip ${det.trip_ms - det.pickup_ms} ms · cleared after ${det.duration_ms ?? '—'} ms${det.breaker_failure ? ' (<b>breaker failure</b>)' : ''} · `
+            + `force ${eff.force_pct_of_design} % of design · I²t ${eff.i2t_pct_of_withstand} % of the 2 s withstand · winding ${eff.winding_before_c} → ${eff.winding_after_c} °C (limit ${eff.winding_limit_c})`
+            + (det.internal ? ' · <b>internal fault (tank pressure surge)</b>' : ' · external (no pressure surge)');
+          drawChart(bar.parentNode, { title: `${w.id.replaceAll('_', ' ')}: current per phase every 20 ms (% of rated)`, unit: '%', series: [
+              { name: 'R', values: phase(w.i_pct, 0), color: C.r }, { name: 'Y', values: phase(w.i_pct, 1), color: C.y }, { name: 'B', values: phase(w.i_pct, 2), color: C.a }],
+            lines: [{ y: L.sc_pickup_multiple * 100, label: `Pickup ${L.sc_pickup_multiple} × rated`, level: 'CRITICAL' },
+              { y: L.short_circuit_multiple * 100, label: `Rated I_sc ${L.short_circuit_multiple} × (${L.short_circuit_ka_lv} kA)`, level: 'WARNING' }] }, ctxw);
+          drawChart(bar.parentNode, { title: `${w.id.replaceAll('_', ' ')}: secondary voltage per phase every 20 ms (% of nominal)`, unit: '%', series: [
+              { name: 'R', values: phase(w.v_pct, 0), color: C.r }, { name: 'Y', values: phase(w.v_pct, 1), color: C.y }, { name: 'B', values: phase(w.v_pct, 2), color: C.a }],
+            lines: [{ y: L.sc_sag_pct, label: `Collapse < ${L.sc_sag_pct} %`, level: 'CRITICAL' }] }, ctxw);
+          const charts = [...bar.parentNode.querySelectorAll('.chart')].slice(-2);
+          bar.after(info, ...charts);
+        } else if (w) {
           const L = tb1.limits, isV = m.windows === 'VOLTAGE';
           const t0 = Date.parse(w.start);
           drawChart(bar.parentNode, isV

@@ -12,11 +12,11 @@ Payloads: timebar1.json (1-minute resolution for playback + the 20 ms windows), 
 """
 import csv
 import json
-from datetime import timedelta
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
-from app.alerts.configuration import PROJECT_ROOT
+from app.paths import PROJECT_ROOT
 from app.twin2 import formulas as f
 from app.twin2 import timebar1, timebar2
 
@@ -126,9 +126,37 @@ def timebar1_events(d: dict[str, Any], flags: dict[str, list], cfg: dict[str, An
         for a, b in _runs(sec[key], lambda v: v in ("ALARM", "TRIP"), gap=900):
             add(f"{monitor.upper()}_ALARM", "WARNING", a, b, monitor,
                 f"{monitor.upper()} at or above the {alarm:.0f} degC alarm (peak {max(sec[temp][a:b]):.1f} degC).")
-        for a, b in _runs(sec[key], lambda v: v == "TRIP"):
+        for a, b in _runs(sec[key], lambda v: v == "TRIP", gap=120):   # merge sensor flicker around the setting
             add(f"{monitor.upper()}_TRIP", "CRITICAL", a, b, monitor,
                 f"{monitor.upper()} reached the {trip:.0f} degC trip setting ({max(sec[temp][a:b]):.1f} degC).")
+    for fl in d["faults"]:   # short circuits (20 ms protection decision + effects on the transformer)
+        det, eff, spec = fl["detection"], fl["effects"], fl["spec"]
+        if not det:
+            continue
+        a = int(fl["t"])
+        where = spec["where"]
+        clear = (f"tripped {det['trip_ms'] - det['pickup_ms']:.0f} ms after pickup, current cleared after "
+                 f"{det['duration_ms']:.0f} ms" if det["duration_ms"] is not None else "current NOT cleared in the recording")
+        add("SHORT_CIRCUIT", "CRITICAL", a, a + 1, "fault",
+            f"Short circuit, {det['fault'] or 'high current'}: {det['peak_current_pct'] / 100:.1f} x rated "
+            f"({det['peak_current_pct'] * d['i_rated_sec'] / 100 / 1000:.1f} kA LV) with the voltage down to "
+            f"{det['min_voltage_pct']:.0f} %; {clear}. {where}. Peak force {eff['force_pct_of_design']:.0f} % of the "
+            f"design withstand, I2t {eff['i2t_pct_of_withstand']:.1f} %, winding {eff['winding_before_c']:.0f} -> "
+            f"{eff['winding_after_c']:.0f} degC (limit {eff['winding_limit_c']:.0f}).",
+            fault=fl["t"])
+        if det["breaker_failure"]:
+            add("BREAKER_FAILURE", "CRITICAL", a, a + 1, "fault",
+                f"Breaker failure: the fault flowed for {det['duration_ms']:.0f} ms (limit "
+                f"{cfg['short_circuit']['breaker_failure_ms']:.0f} ms) - the main breaker did not open and the backup "
+                f"cleared it. Inspect / test the main breaker before re-energising.")
+        if det["internal"]:
+            add("INTERNAL_FAULT", "CRITICAL", a, a + 1, "fault",
+                f"Internal fault: tank pressure jumped {det['pressure_rise_kpa']:.0f} kPa during the fault (arc in the oil). "
+                f"Do not re-energise: DGA, winding resistance / ratio and SFRA first.")
+        else:
+            add("FAULT_CLEARED", "MAINTENANCE_REQUIRED", a, a + spec["restore_s"], "fault",
+                f"External fault (no tank pressure surge): transformer re-energised after {spec['restore_s'] // 60} min "
+                f"once the faulted section was isolated; counted as a through-fault on timebar 2.")
     for e in d["events"]:   # breaker operations
         add(e["type"], e["level"], e["t"], e["t"] + 1, "thermal" if "THERMAL" in e["type"] else "loading", e["message"])
     names = {"top_oil_rise_over_limit": ("TOP_OIL_RISE_OVER_LIMIT", "WARNING", "thermal",
@@ -183,7 +211,11 @@ def build(cfg: dict[str, Any] | None = None, out_dir: Path | None = None) -> dic
     out_dir = out_dir or OUT_DIR
     out_dir.mkdir(parents=True, exist_ok=True)
     d1 = timebar1.simulate(cfg)
-    d2 = timebar2.simulate(cfg)
+    # the timebar-1 day is one day of the timebar-2 year: its short circuits are that day's through-faults
+    day_index = (d1["day0"].date() - datetime.fromisoformat(cfg["timebar2"]["start"]).date()).days
+    day_faults = ({"day": day_index, "faults": [fl["effects"] for fl in d1["faults"] if fl["effects"]]}
+                  if 0 <= day_index < cfg["timebar2"]["days"] else None)
+    d2 = timebar2.simulate(cfg, day_faults)
     sec = d1["sec"]
     flags = thermal_flags(sec, cfg)
     ev1 = timebar1_events(d1, flags, cfg)
@@ -221,6 +253,15 @@ def build(cfg: dict[str, Any] | None = None, out_dir: Path | None = None) -> dic
     for dev in timebar2.DEVICES:
         series[f"prec_{dev}"] = [r[dev] for r in d1["precision"]]
     ovmap = {"OFF": "OFF"}
+    # short-circuit protection: CRITICAL in the minute of a fault, out of service while the breaker is open
+    fault_min = {int(fl["t"]) // 60: "CRITICAL" for fl in d1["faults"] if fl["detection"]}
+    fault_status = [fault_min.get(m) or ("NORMAL" if any(sec["energized"][m * 60:(m + 1) * 60]) else "OFF")
+                    for m in range(n_min)]
+    fault_peak = [None] * n_min
+    for fl in d1["faults"]:
+        if fl["detection"]:
+            fault_peak[int(fl["t"]) // 60] = fl["detection"]["peak_current_pct"]
+    series["fault_peak_pct"] = fault_peak
     status = {
         "loading": [_minute_status(sec["overload"], m, ovmap) for m in range(n_min)],
         "voltage": [_minute_status(sec["voltage"], m, {"OVERVOLTAGE": "WARNING", "UNDERVOLTAGE": "WARNING"}) for m in range(n_min)],
@@ -229,6 +270,7 @@ def build(cfg: dict[str, Any] | None = None, out_dir: Path | None = None) -> dic
         "oti": [_minute_status(sec["oti_condition"], m, {"ALARM": "WARNING", "TRIP": "CRITICAL"}) for m in range(n_min)],
         "wti": [_minute_status(sec["wti_condition"], m, {"ALARM": "WARNING", "TRIP": "CRITICAL"}) for m in range(n_min)],
         "pressure": [r["status"] for r in d1["pressure"]],
+        "fault": fault_status,
     }
     therm = []
     for m in range(n_min):
@@ -245,6 +287,7 @@ def build(cfg: dict[str, Any] | None = None, out_dir: Path | None = None) -> dic
         status[f"prec_{dev}"] = [r[f"{dev}_status"] for r in d1["precision"]]
 
     th, pr, tr = cfg["thermal"], cfg["pressure"], cfg["transformer"]
+    scfg = cfg["short_circuit"]
     vp, vs = f.voltage_rule(cfg, "primary"), f.voltage_rule(cfg, "secondary")
     limits = {
         "overload_warning_pct": cfg["electrical"]["overload_warning_pct"], "overload_trip_pct": cfg["electrical"]["overload_trip_pct"],
@@ -255,9 +298,18 @@ def build(cfg: dict[str, Any] | None = None, out_dir: Path | None = None) -> dic
         "wti_alarm_c": th["wti_alarm_c"], "wti_trip_c": th["wti_trip_c"], "top_oil_rise_limit_k": th["top_oil_rise_limit_k"],
         "residual_min_k": th["residual_min_k"], "pressure_warning_kpa": pr["warning_kpa_abs"], "pressure_limit_kpa": pr["limit_kpa_abs"],
         "precision_max_pct": cfg["precision"]["max_deviation_pct"],
+        "impedance_pct": scfg["impedance_pct"], "short_circuit_multiple": round(f.rated_short_circuit_multiple(scfg), 1),
+        "short_circuit_ka_lv": round(f.rated_short_circuit_multiple(scfg) * d1["i_rated_sec"] / 1000, 1),
+        "sc_pickup_multiple": scfg["pickup_multiple"], "sc_sag_pct": scfg["sag_pct"],
+        "breaker_failure_ms": scfg["breaker_failure_ms"], "winding_limit_c": scfg["winding_limit_c"],
         "i_rated_primary_a": round(d1["i_rated_pri"], 2), "i_rated_secondary_a": round(d1["i_rated_sec"], 1),
     }
     windows = [dict(w, start=_clock(d1["day0"], w["t0"])) for w in d1["windows"]]
+    for k, fl in enumerate(d1["faults"]):      # 20 ms per-phase detail of each short circuit
+        w = fl["window"]
+        windows.append({"id": f"short_circuit_{k + 1}", "kind": "FAULT", "t0": w["t0"], "dt": w["dt"],
+                        "start": _clock(d1["day0"], w["t0"]), "i_pct": w["i_pct"], "v_pct": w["v_pct"],
+                        "pressure_rise_kpa": w["pressure_rise_kpa"], "detection": fl["detection"], "effects": fl["effects"]})
     tb1 = {"timebar": 1, "start": d1["day0"].isoformat(), "step_s": 60, "minutes": n_min, "series": series,
            "status": status, "events": ev1, "limits": limits, "windows": windows,
            "sampling": {"voltage_current": "20 ms per-cycle RMS (full rate in event windows, 1 s min / max stream)",
@@ -266,7 +318,9 @@ def build(cfg: dict[str, Any] | None = None, out_dir: Path | None = None) -> dic
     # ---------- timebar 2
     rows = d2["rows"]
     ev2 = []
-    monitor_of = {"OIL_LEAK": "oil", "MINIMUM_OIL_LEVEL": "oil", "OIL_LEAK_REPAIRED": "oil"}
+    monitor_of = {"OIL_LEAK": "oil", "MINIMUM_OIL_LEVEL": "oil", "OIL_LEAK_REPAIRED": "oil",
+                  "THROUGH_FAULT": "through_faults", "THROUGH_FAULT_DUTY": "through_faults",
+                  "THROUGH_FAULT_DUTY_TESTED": "through_faults"}
     for e in d2["events"]:
         mon = monitor_of.get(e["type"]) or "prec_" + e["type"].split("_")[1].lower()
         ev2.append({"timebar": 2, "type": e["type"], "level": e["level"], "monitor": mon, "day": e["day"],
@@ -277,10 +331,15 @@ def build(cfg: dict[str, Any] | None = None, out_dir: Path | None = None) -> dic
                       "volume_expected": [r["volume_expected_noleak"] for r in rows],
                       "volume_measured": [r["volume_measured"] for r in rows], "residual": [r["residual"] for r in rows],
                       "cumulative_leak": [r["cumulative_leak"] for r in rows],
+                      **{key: [r[key] for r in rows] for key in ("through_faults", "through_faults_severe",
+                                                                  "through_fault_i2t_pct", "through_fault_force_pct")},
                       **{f"prec_{dev}": [r[dev] for r in rows] for dev in timebar2.DEVICES}},
            "status": {"oil": [r["oil_status"] for r in rows],
+                      "through_faults": [r["through_fault_status"] for r in rows],
                       **{f"prec_{dev}": [r[f"{dev}_status"] for r in rows] for dev in timebar2.DEVICES}},
            "limits": {"tolerance_l": o["tolerance_l"], "minimum_volume_l": o["minimum_volume_l"],
+                      "severe_force_pct": cfg["short_circuit"]["severe_force_pct"],
+                      "severe_faults_warning": cfg["short_circuit"]["severe_faults_warning"],
                       "reference_volume_l": o["reference_volume_l"], "precision_max_pct": cfg["precision"]["max_deviation_pct"]}}
 
     (out_dir / "timebar1.json").write_text(json.dumps(tb1, separators=(",", ":")), encoding="utf-8")
@@ -343,6 +402,11 @@ def _write_csvs(out_dir: Path, d1, flags, d2, events) -> None:
           ([r["date"], r["oil_temperature"], r["volume_expected_noleak"], r["volume_measured"], r["residual"],
             r["cumulative_leak"], r["oil_status"], *[v for dev in timebar2.DEVICES for v in r[dev]],
             *[r[f"{dev}_status"] for dev in timebar2.DEVICES]] for r in d2["rows"]))
+    write("timebar1_faults_20ms.csv",
+          ["fault", "timestamp", "i_r_pct", "i_y_pct", "i_b_pct", "v_r_pct", "v_y_pct", "v_b_pct", "tank_pressure_rise_kpa"],
+          ([k + 1, _clock(day0, fl["window"]["t0"] + j * fl["window"]["dt"]), *fl["window"]["i_pct"][j],
+            *fl["window"]["v_pct"][j], fl["window"]["pressure_rise_kpa"][j]]
+           for k, fl in enumerate(d1["faults"]) for j in range(len(fl["window"]["i_pct"]))))
     write("events.csv", ["timebar", "start", "end", "type", "level", "monitor", "message"],
           ([e["timebar"], e["start"], e.get("end", e["start"]), e["type"], e["level"], e["monitor"], e["message"]]
            for e in events))

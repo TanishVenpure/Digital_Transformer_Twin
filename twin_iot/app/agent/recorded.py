@@ -9,18 +9,21 @@ MONITORS = {
     1: [("loading", "loading_max", "%", 1), ("voltage", None, "%", 2), ("oti", "top_oil", "°C", 1),
         ("wti", "wti", "°C", 1), ("pressure", "pressure_abs", "kPa abs", 1),
         ("prec_current", "prec_current", "% max deviation", 2), ("prec_voltage", "prec_voltage", "% max deviation", 2),
-        ("prec_temperature", "prec_temperature", "% max deviation", 2)],
+        ("prec_temperature", "prec_temperature", "% max deviation", 2),
+        ("fault", "fault_peak_pct", "% of rated (fault peak)", 0)],
     2: [("oil", "residual", "L vs no-leak expectation", 1),
         ("prec_current", "prec_current", "% max deviation", 2), ("prec_voltage", "prec_voltage", "% max deviation", 2),
         ("prec_temperature", "prec_temperature", "% max deviation", 2),
         ("insulation", "dp", "estimated paper DP", 0), ("moisture", "wcp", "% paper water", 2),
-        ("dga", "co", "ppm CO", 0)],
+        ("dga", "co", "ppm CO", 0), ("through_faults", "through_faults", "through-faults carried", 0)],
 }
 SIGNED = {"voltage", "oil"}
 # Question keywords -> monitors (timebar, monitor) the answer covers. Keywords of 3 letters or fewer
 # must match a whole word ("ct", "pt", "oti", "wti").
 TOPICS = [
-    (("overload", "loading", "load", "trip", "breaker"), [(1, "loading")]),
+    (("short circuit", "short-circuit", "fault", "faults", "breaker", "through-fault", "sfra", "kA"),
+     [(1, "fault"), (2, "through_faults")]),
+    (("overload", "loading", "load", "trip"), [(1, "loading")]),
     (("voltage", "supply", "grid"), [(1, "voltage")]),
     (("oil", "leak", "top-up", "topped"), [(1, "oti"), (2, "oil")]),
     (("temperature", "thermal", "hot", "heat", "oti", "cooling", "radiator"), [(1, "oti"), (1, "wti")]),

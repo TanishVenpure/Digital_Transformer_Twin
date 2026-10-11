@@ -173,3 +173,74 @@ def test_measured_winding_is_never_drawn_below_the_hot_spot(payloads):
     s = payloads["timebar1"]["series"]
     pairs = [(w, h) for w, h in zip(s["winding_measured"], s["hotspot"]) if w is not None and h is not None]
     assert pairs and min(w - h for w, h in pairs) > -0.5
+
+
+# ---------------------------------------------------------------- short circuit
+
+SC = CFG["short_circuit"]
+
+
+def _cycles(pre, fault, post, phases=("Y",), pu=10.0, v_fault=20.0):
+    """Per-cycle rows: load 60 %, then the fault on `phases`, then the breaker open."""
+    i, v = [], []
+    for c in range(pre + fault + post):
+        if c < pre:
+            i.append([60, 59, 58]); v.append([100, 100, 100])
+        elif c < pre + fault:
+            i.append([pu * 100 if p in phases else 60 for p in "RYB"])
+            v.append([v_fault if p in phases else 104 for p in "RYB"])
+        else:
+            i.append([0, 0, 0]); v.append([0, 0, 0])
+    return i, v
+
+
+def test_rated_short_circuit_current_from_impedance():
+    assert f.rated_short_circuit_multiple(SC) == pytest.approx(100 / SC["impedance_pct"])
+
+
+@pytest.mark.parametrize("phases,kind", [(("Y",), "single line-to-ground (Y)"), (("R", "B"), "line-to-line (R-B)"),
+                                         (("R", "Y", "B"), "three-phase")])
+def test_short_circuit_is_classified_and_timed(phases, kind):
+    i, v = _cycles(10, 3, 10, phases)
+    det = f.detect_short_circuit(i, v, 20.0, SC)
+    assert det["kind"] == "SHORT_CIRCUIT" and det["fault"] == kind and det["phases"] == list(phases)
+    assert det["pickup_ms"] == 200 and det["trip_ms"] - det["pickup_ms"] == 20 * SC["trip_cycles"]
+    assert det["duration_ms"] == 60 and not det["breaker_failure"]
+
+
+def test_high_current_without_voltage_collapse_is_not_a_short_circuit():
+    i, v = _cycles(10, 3, 10, pu=5.0, v_fault=97.0)
+    assert f.detect_short_circuit(i, v, 20.0, SC)["kind"] == "INSTANT_OVERCURRENT"
+
+
+def test_overload_below_pickup_is_left_to_the_overload_protection():
+    i, v = _cycles(10, 3, 10, pu=1.3, v_fault=98.0)
+    assert f.detect_short_circuit(i, v, 20.0, SC) is None
+
+
+def test_slow_clearing_is_a_breaker_failure_and_pressure_surge_an_internal_fault():
+    i, v = _cycles(10, 12, 5)
+    assert f.detect_short_circuit(i, v, 20.0, SC)["breaker_failure"]          # 240 ms > 150 ms
+    assert f.detect_short_circuit(i, v, 20.0, SC, pressure_rise_kpa=30)["internal"]
+
+
+def test_fault_effects_stay_inside_the_iec_withstand():
+    i, v = _cycles(10, 3, 10, ("R", "Y", "B"), pu=f.rated_short_circuit_multiple(SC))
+    eff = f.fault_effects(f.detect_short_circuit(i, v, 20.0, SC), 90.0, SC)
+    assert eff["force_pct_of_design"] == pytest.approx(100, abs=0.5)          # a full rated fault = design force
+    assert eff["winding_after_c"] < SC["winding_limit_c"]
+    assert f.adiabatic_winding_temperature(90, 3 * 22.2, 2.0) < SC["winding_limit_c"]   # 2 s rated withstand
+
+
+def test_timebar1_short_circuits_and_timebar2_through_fault_duty(payloads):
+    tb1, tb2 = payloads["timebar1"], payloads["timebar2"]
+    types1 = [e["type"] for e in tb1["events"]]
+    assert types1.count("SHORT_CIRCUIT") == 2 and "BREAKER_FAILURE" in types1 and "FAULT_CLEARED" in types1
+    faults = [w for w in tb1["windows"] if w["kind"] == "FAULT"]
+    assert {w["detection"]["fault"] for w in faults} == {"single line-to-ground (Y)", "three-phase"}
+    assert all(w["effects"]["force_pct_of_design"] < 100 for w in faults)
+    assert "CRITICAL" in tb1["status"]["fault"] and "OFF" in tb1["status"]["fault"]
+    types2 = [e["type"] for e in tb2["events"]]
+    assert "THROUGH_FAULT_DUTY" in types2 and "THROUGH_FAULT_DUTY_TESTED" in types2
+    day = (__import__("datetime").date.fromisoformat(tb1["start"][:10]) - __import__("datetime").date.fromisoformat(tb2["start"])).days
+    assert tb2["series"]["through_faults"][day] - tb2["series"]["through_faults"][day - 1] == 2   # the two timebar-1 faults

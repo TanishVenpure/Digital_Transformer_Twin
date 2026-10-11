@@ -29,7 +29,7 @@ from typing import Any
 
 import yaml
 
-from app.alerts.configuration import PROJECT_ROOT
+from app.paths import PROJECT_ROOT
 
 CONFIG_PATH = PROJECT_ROOT / "config" / "twin2.yaml"
 
@@ -196,3 +196,80 @@ def oil_leak_status(measured_l: float, expected_l: float, o: dict[str, Any]) -> 
     if measured_l - expected_l < -o["tolerance_l"]:
         return "WARNING"             # OIL_LEAK
     return "NORMAL"
+
+
+# ---------------------------------------------------------------- short circuit (timebar 1, 20 ms cycles)
+# Rated short-circuit current: I_sc = I_rated x 100 / Z%. Detection from per-cycle RMS current and voltage:
+# pickup when any phase >= pickup_multiple x rated; a short circuit when a faulted phase's voltage collapses
+# below sag_pct; cleared when every phase is below cleared_pct; breaker failure when that takes longer than
+# breaker_failure_ms; internal when the tank pressure jumps during the fault (sudden-pressure relay).
+# Effects (IEC 60076-5): I2t against I_sc for withstand_s, force against the design first peak
+# (kappa x sqrt(2) x I_sc), and the adiabatic copper winding temperature
+#   theta1 = theta0 + 2 (theta0 + 235) / (106000 / (J^2 t) - 1)      J in A/mm2, t in s
+
+PHASES = ("R", "Y", "B")
+
+
+def rated_short_circuit_multiple(sc: dict[str, Any]) -> float:
+    """I_sc / I_rated = 100 / Z%."""
+    return 100.0 / float(sc["impedance_pct"])
+
+
+def adiabatic_winding_temperature(theta0_c: float, current_density_a_mm2: float, duration_s: float) -> float:
+    """IEC 60076-5 average copper winding temperature after a short circuit of duration_s."""
+    j2t = current_density_a_mm2 ** 2 * duration_s
+    if j2t <= 0:
+        return theta0_c
+    denom = 106000.0 / j2t - 1
+    return theta0_c + 2 * (theta0_c + 235) / denom if denom > 0 else float("inf")
+
+
+def fault_kind(phases: list[str]) -> str:
+    return {1: f"single line-to-ground ({phases[0]})", 2: f"line-to-line ({'-'.join(phases)})",
+            3: "three-phase"}.get(len(phases), "")
+
+
+def detect_short_circuit(i_pct: list[list[float]], v_pct: list[list[float]], dt_ms: float, sc: dict[str, Any],
+                         pressure_rise_kpa: float = 0.0) -> dict[str, Any] | None:
+    """Per-cycle RMS current (% of rated) and voltage (% of nominal) per phase -> the protection's decision."""
+    pickup = sc["pickup_multiple"] * 100
+    pick = next((k for k, row in enumerate(i_pct) if max(row) >= pickup), None)
+    if pick is None:
+        return None
+    need = int(sc["trip_cycles"])
+    if any(max(i_pct[k]) < pickup for k in range(pick, min(pick + need, len(i_pct)))):
+        return None                                   # did not hold: a single-cycle spike, no trip
+    trip = pick + need
+    window = range(pick, min(trip, len(i_pct)))
+    phases = [p for n, p in enumerate(PHASES) if any(i_pct[k][n] >= pickup for k in window)]
+    sagged = [p for n, p in enumerate(PHASES) if any(v_pct[k][n] < sc["sag_pct"] for k in window)]
+    cleared = next((k for k in range(trip, len(i_pct)) if max(i_pct[k]) < sc["cleared_pct"]), None)
+    duration_ms = (cleared - pick) * dt_ms if cleared is not None else None
+    short = any(p in sagged for p in phases)
+    fault_cycles = range(pick, cleared if cleared is not None else len(i_pct))
+    peak = max(max(i_pct[k]) for k in fault_cycles)
+    vmin = min(min(v_pct[k][n] for n, p in enumerate(PHASES) if p in phases) for k in fault_cycles)
+    return {
+        "kind": "SHORT_CIRCUIT" if short else "INSTANT_OVERCURRENT", "phases": phases,
+        "fault": fault_kind(phases) if short else "", "pickup_ms": round(pick * dt_ms, 1),
+        "trip_ms": round(trip * dt_ms, 1), "cleared_ms": round(cleared * dt_ms, 1) if cleared is not None else None,
+        "duration_ms": round(duration_ms, 1) if duration_ms is not None else None,
+        "breaker_failure": duration_ms is None or duration_ms > sc["breaker_failure_ms"],
+        "internal": pressure_rise_kpa >= sc["pressure_surge_kpa"], "pressure_rise_kpa": round(pressure_rise_kpa, 1),
+        "peak_current_pct": round(peak, 1), "min_voltage_pct": round(vmin, 1),
+        "i2_dt_pu2s": sum((max(i_pct[k]) / 100) ** 2 * dt_ms / 1000 for k in fault_cycles),
+    }
+
+
+def fault_effects(event: dict[str, Any], winding_before_c: float, sc: dict[str, Any]) -> dict[str, Any]:
+    """I2t and force against the IEC 60076-5 design withstand, and the winding temperature after the fault."""
+    m = rated_short_circuit_multiple(sc)
+    duration = (event["duration_ms"] or 0) / 1000
+    i_pu = event["peak_current_pct"] / 100
+    i2t_pct = event["i2_dt_pu2s"] / (m * m * sc["withstand_s"]) * 100
+    force_pct = (i_pu / m) ** 2 * 100                      # same kappa on both sides: ratio of peaks squared
+    theta1 = adiabatic_winding_temperature(winding_before_c, sc["rated_current_density_a_mm2"] * i_pu, duration)
+    return {"i2t_pct_of_withstand": round(i2t_pct, 2), "force_pct_of_design": round(force_pct, 1),
+            "peak_asymmetric_pu": round(sc["peak_factor_kappa"] * math.sqrt(2) * i_pu, 1),
+            "winding_before_c": round(winding_before_c, 1), "winding_after_c": round(theta1, 1),
+            "winding_limit_c": sc["winding_limit_c"]}

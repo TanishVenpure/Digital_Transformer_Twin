@@ -380,6 +380,8 @@
   @media (max-width: 1300px) { .maint-toasts { right: 352px; } }
   @media (max-width: 1100px) { .maint-toasts { left: 16px; right: 16px; top: 90px; width: auto; } }
   @media (prefers-reduced-motion: reduce) { .maint-toast, .maint-toast.fade-out { animation: none; } }
+  .win-info { font-size: 12px; color: var(--muted); margin: 6px 2px 2px; line-height: 1.5; }
+  .win-info b { color: var(--text); }
 </style>
 </head>
 <body>
@@ -512,7 +514,7 @@
 <script src="twin3d.js?v=20261011-1"></script>
 <script src="maint-events.js?v=20261011-popups1"></script>
 <script src="maintenance-popups.js?v=20261011-popups1"></script>
-<script src="timebars.js?v=20261011-popups1"></script>
+<script src="timebars.js?v=20261011-sc1"></script>
 <script>
 (() => {
   const $ = (id) => document.getElementById(id);

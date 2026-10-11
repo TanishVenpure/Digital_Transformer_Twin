@@ -11,7 +11,7 @@ The project has two parts:
 | Part | Folder | What it is |
 |---|---|---|
 | Dashboard | `dashboard/` | The web page: 3D model, monitor cards, graphs, signal list, two timebars (`timebars.js`) |
-| Backend | `twin_iot/` | FastAPI: the two-timebar model (`app/twin2/`) and the earlier hourly 8-monitor pipeline on PostgreSQL; serves the dashboard at `/dashboard/` |
+| Backend | `twin_iot/` | FastAPI: the two-timebar model (`app/twin2/`) and the assistant (`app/agent/`); serves the dashboard at `/dashboard/`. No database |
 
 ---
 
@@ -163,6 +163,24 @@ Each precision device fails 2 or 3 times, about every 4 months, and is recalibra
 
 ---
 
+### Short circuits (timebar 1 at 20 ms, timebar 2 as through-fault duty)
+
+| Part | Formula / rule | Signal |
+|---|---|---|
+| Fault level | Rated short-circuit current I_sc = I_rated × 100 / Z% = 22.2 × rated (18.7 kA LV) with Z = 4.5 % (ASSUMED: take it from the nameplate) | - |
+| Detection (per cycle, per phase) | Instantaneous pickup when a phase is ≥ 3 × rated for 1 cycle. A short circuit when that phase's voltage collapses below 80 %; high current with healthy voltage is an instantaneous overcurrent instead. 1 / 2 / 3 phases = line-to-ground / line-to-line / three-phase | **SHORT_CIRCUIT** (critical, trip) |
+| Clearing | Cleared when every phase is below 5 % of rated (breaker open). Still flowing after 150 ms = the main breaker failed and the backup cleared it | **BREAKER_FAILURE** |
+| Internal vs external | Tank pressure jump of ≥ 20 kPa during the fault (arc in the oil) = internal; otherwise a through-fault fed from the transformer | **INTERNAL_FAULT** (do not re-energise) or **FAULT_CLEARED** |
+| Effects (IEC 60076-5) | I²t as a % of I_sc for 2 s; peak force as (I / I_sc)² % of the design first peak (κ = 1.8); winding after the fault θ1 = θ0 + 2(θ0 + 235) / (106000 / (J²t) − 1), limit 250 °C | Shown with each fault |
+| Through-fault duty (timebar 2) | Every fault the transformer carries is counted with its force and I²t; the timebar-1 day's two faults are day 14 of the year, plus simulated monsoon faults | **THROUGH_FAULT**, and **THROUGH_FAULT_DUTY** after 3 severe faults (force ≥ 25 %): SFRA, winding resistance and ratio tests, closed by **THROUGH_FAULT_DUTY_TESTED** |
+
+The simulated day has two faults. At 01:47:12 an LV feeder cable fault (phase Y to ground, about 9 × rated)
+is cleared in 60 ms. At 06:30:05 a three-phase fault at the LV busbar (about 18.6 × rated) is not opened by the
+main breaker; the backup clears it after 240 ms (breaker failure, 70 % of the design force). Each is recorded
+per cycle and per phase from 200 ms before to 600 ms after (`timebar1_faults_20ms.csv`), and the transformer
+stays out of service for 20 and 45 minutes. The 1 s stream is the second before the fault; the fault itself is
+only in the 20 ms detail.
+
 ## 4. Monitor cards and graphs
 
 The left column has one card per monitor, grouped by timebar. Each card shows the value at its
@@ -221,92 +239,45 @@ Regenerate them with `python scripts/simulate_twin2.py`, or `POST /api/twin2/reb
 
 ---
 
-## 7. Hourly 8-monitor backend (`twin_iot/`, still available through the API)
+## 7. Backend API (`twin_iot/app/api/main.py`)
 
-### Processing pipeline
-Reading → **validation** (`config/validation.yaml`: each input must be a finite number in a
-plausible range; bad values are dropped and reported as OUT_OF_RANGE, NOT_NUMERIC,
-NOT_FINITE, MISSING or GAP) → the **8 monitors** → **alerts** → **3D model selection** →
-stored in PostgreSQL → **maintenance sheet** rebuilt.
-
-### API
 | Method | Path | Returns |
 |---|---|---|
-| GET | `/api/health` | API and database status |
-| GET | `/api/transformers` | Transformers with readings and their date range |
-| GET | `/api/iots` | The monitors and their limits |
+| GET | `/api/health` | Status and the generated datasets |
 | GET | `/api/twin2/timebar/1` or `/2` | Two-timebar payloads the dashboard plays (built on first request) |
+| GET | `/api/twin2/sheet` | Maintenance checks recorded from both timebars' events |
 | POST | `/api/twin2/rebuild` | Re-run both simulations from `config/twin2.yaml` |
-| GET | `/api/twin2/files/{name}.csv` | Download a generated dataset |
-| GET | `/api/timeline/{id}` | Every stored hour (statuses, values, time to critical, input issues, 3D view) plus repairs and all trend analytics. The dashboard's main data feed |
-| GET | `/api/analytics/oil-leak/{id}` | Oil-leak analysis |
-| GET | `/api/analytics/load-growth/{id}` | Load-growth analysis |
-| GET | `/api/analytics/winding/{id}` | Winding thermal analysis |
-| GET | `/api/analytics/top-oil/{id}` | Top-oil cooling analysis |
-| GET | `/api/maintenance-events/{id}` | Maintenance actually performed (repairs) |
-| GET | `/api/maintenance/{id}?format=json\|csv\|jsonl\|md` | The maintenance sheet. Filters: `until`, `iot`, `status`, `limit`. jsonl and md are for the planned RAG |
-| GET | `/api/readings/{reading_id}` | One stored hour in full |
-| GET | `/api/alerts/{id}?limit=50` | Recent alerts |
-| POST | `/api/readings` | Ingest one live reading |
-| POST | `/api/upload` | Upload a CSV (form fields: file, transformer_id, replace) |
-| GET | `/api/twin3d/models` | The 3D views and what triggers them |
-| GET | `/api/twin3d/state` | The current 3D view and recent calls |
-| POST | `/api/twin3d/signal` | Asks the backend to switch the 3D view for a stored hour |
+| GET | `/api/twin2/files/{name}.csv` | Download a generated dataset (incl. `timebar1_faults_20ms.csv`) |
+| POST | `/api/assistant/chat` | Evidence-grounded answer at the two timebar cursors (Gemini when `GEMINI_API_KEY` is set, recorded-data answer otherwise) |
+| GET | `/api/assistant/status` | Assistant provider and whether a key is configured |
 | GET | `/` | Redirects to `/dashboard/` |
-
-The Blender bridge (`app/twin3d/blender_bridge.py`) records each view switch and answers
-`PENDING_BLENDER` until the bpy code is added.
-
-### Sample data (`scripts/simulate.py`)
-```
-python scripts/simulate.py [--days 90] [--seed 7] [--transformer T1] [--start 2026-07-01] [--mode degradation|random] [--keep]
-```
-- **degradation** (the default) produces realistic wear: each monitor degrades, crosses its
-  limits and is repaired, with daily load and weather cycles. It also includes an
-  accelerating oil leak, a winding cooling fault, radiator fouling with oil ageing, one
-  emergency-overload episode (day 60, about 1.4 × rated load with a part-closed radiator valve,
-  so the WTI passes 110 °C and then 120 °C for several hours before the load is shed), and
-  supply-voltage swings. A small share of values is corrupted on purpose, so validation is
-  exercised.
-- **random** produces independent random values.
-
-It also writes the maintenance sheet exports to `twin_iot/data/maintenance/`.
 
 ### Tests
 ```
 cd twin_iot
-python -m pytest -q
+python -m pytest -q          # two-timebar formulas and data, assistant
+cd ../dashboard
+node --test tests/maint-events.test.js tests/maintenance-popups.test.js
 ```
-The tests cover the monitors, validation, the 3D view selection, the maintenance sheet, the
-simulator and all four analytics. They need no database.
 
 ---
 
 ## 8. Running it locally
 
-Needs Python 3.11+ and PostgreSQL 13+.
+Needs Python 3.11+ only (no database).
 
 ```
 cd twin_iot
 python -m venv .venv
-.venv\Scripts\activate
+.venv\Scripts\activate            # macOS / Linux: source .venv/bin/activate
 pip install -r requirements.txt
-
-initdb -D twin_pg -U twin -A trust
-pg_ctl start -D twin_pg -o "-p 5434" -l twin_pg.log
-createdb -h localhost -p 5434 -U twin twin_iot
-
-python scripts/simulate.py            # hourly 8-monitor data (PostgreSQL)
-python scripts/simulate_twin2.py      # two-timebar datasets (no database needed)
+python scripts/simulate_twin2.py      # optional: the API also builds the datasets on first request
 python -m uvicorn app.api.main:app --port 8020
 ```
 
-Then open http://localhost:8020/dashboard/.
-
-To use another database, set `TWIN_DATABASE_URL`, for example
-`postgresql://twin@localhost:5436/postgres`. To serve another dashboard folder, set
-`TWIN_DASHBOARD_DIR`. Docker is also available (`twin_iot/docker-compose.yml`); see
-`twin_iot/README.md`.
+Then open http://localhost:8020/dashboard/. Set `GEMINI_API_KEY` to let the assistant phrase its
+answers with Gemini. To serve another dashboard folder, set `TWIN_DASHBOARD_DIR`. Docker:
+`docker compose up -d --build` in `twin_iot/`.
 
 After changing the dashboard's scripts, bump the `?v=` tag on their `<script>` lines in
 `dashboard/index.html` so browsers load the new copies.

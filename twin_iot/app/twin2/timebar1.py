@@ -23,6 +23,12 @@ The day (UTC), chosen so that every condition appears at least once:
   17:30      evening peak with the neighbouring feeder back on: loading ~117 % (warning, below trip)
              -> WTI alarm, then WTI trip; out of service 90 min, all cooling and the duct repaired
   18:00-22:00 the current device's Y phase drifts past 1 % accuracy                -> precision maintenance
+  01:47:12   short circuit on an LV feeder ~300 m away, phase Y to ground (~9 x rated, V_Y ~22 %): the
+             instantaneous element trips after 1 cycle, the breaker clears it in 60 ms; out 20 min -> SHORT_CIRCUIT
+  06:30:05   three-phase short circuit at the LV busbar (~18.5 x rated, voltage ~6 %): the main breaker sticks,
+             the backup clears it after 240 ms; out 45 min -> SHORT_CIRCUIT + BREAKER_FAILURE
+             Each fault is recorded at 20 ms per-cycle RMS per phase (200 ms before to 600 ms after) and judged by
+             formulas.detect_short_circuit; its I2t, peak force and winding temperature come from fault_effects.
              (CT / PT deviations need current / voltage: no data while the transformer is out of service)
 The IEC model ("expected") runs on load and ambient; it is paused while the transformer is out of service and
 restarts from the measured top oil when it is re-energised (IEC measured-top-oil method).
@@ -61,6 +67,14 @@ class Scenario:
     COOLING_FAULT = _t(11, 0)
     DUCT_FAULT = _t(12, 0)
     PROBE_DROPOUT = (_t(5, 12), _t(5, 12, 20))
+    # short circuits: start (s), faulted phases, current (x rated), faulted-phase voltage (% nominal), time until the
+    # breaker (or its backup) opens (ms), outage (s), internal tank pressure jump (kPa), where it happened
+    FAULTS = (
+        {"t": _t(1, 47, 12.36), "phases": ("Y",), "pu": 9.2, "v_pct": 22.0, "clear_ms": 60, "restore_s": 1200,
+         "pressure_kpa": 0.0, "where": "LV feeder cable fault about 300 m away (external, through-fault)"},
+        {"t": _t(6, 30, 5.5), "phases": ("R", "Y", "B"), "pu": 18.5, "v_pct": 6.0, "clear_ms": 240, "restore_s": 2700,
+         "pressure_kpa": 0.0, "where": "LV busbar fault (external, through-fault); main breaker stuck, backup cleared it"},
+    )
     DRIFT = (_t(18), _t(22))
     RESTORE_DELAY = 5400                   # s out of service after a thermal trip (inspection, repair)
     EVENING_OVERLOAD = _t(17, 30)
@@ -161,6 +175,9 @@ def simulate(cfg: dict[str, Any] | None = None) -> dict[str, Any]:
     trip_reason = None
     surge_trip_after = 2.0              # s above the trip setting before the overload protection opens
     above_trip_s = 0.0
+    scfg = cfg["short_circuit"]
+    frng = random.Random(seed + 4)
+    faults: list[dict[str, Any]] = []
 
     for s in range(DAY):
         t = float(s)
@@ -269,9 +286,19 @@ def simulate(cfg: dict[str, Any] | None = None) -> dict[str, Any]:
             events.append({"t": t, "type": "THERMAL_TRIP_OPERATED", "level": "CRITICAL",
                            "message": f"Thermal trip on {on} (OTI {oti.lower()}, WTI {wtic.lower()}): top oil "
                                       f"{top_oil:.1f} degC, WTI {wti:.1f} degC. Breaker opened; back in service {back}."})
+        # ---- short circuits (recorded at 20 ms; the 1 s stream above is the second before the fault)
+        for spec in sc.FAULTS:
+            if energized and int(spec["t"]) == s:
+                v_sec = sc.voltage_base_pct(t, phase) - 2.5 * k
+                win = _fault_window(spec, k, v_sec, frng)
+                det = f.detect_short_circuit(win["i_pct"], win["v_pct"], CYCLE * 1000, scfg, spec["pressure_kpa"])
+                eff = f.fault_effects(det, winding_true, scfg) if det else None
+                faults.append({"t": spec["t"], "spec": spec, "window": win, "detection": det, "effects": eff})
+                energized, out_until, trip_reason = False, t + spec["restore_s"], "SHORT_CIRCUIT"
 
     data = {"day0": day0, "sec": sec, "ambient_min": ambient_min, "events": events, "scenario": sc,
-            "i_rated_pri": i_rated_pri, "i_rated_sec": i_rated_sec, "v_nom_pri": v_nom_pri, "v_nom_sec": v_nom_sec}
+            "i_rated_pri": i_rated_pri, "i_rated_sec": i_rated_sec, "v_nom_pri": v_nom_pri, "v_nom_sec": v_nom_sec,
+            "faults": faults}
     data["pressure"] = _pressure(data, cfg)
     data["precision"] = _precision_1min(sc, cfg, random.Random(seed + 2), sec["energized"])
     data["windows"] = _windows_20ms(data, cfg, random.Random(seed + 3))
@@ -318,6 +345,37 @@ def _precision_1min(sc: Scenario, cfg: dict[str, Any], rng: random.Random,
             row[f"{device}_status"] = f.precision_status(devs, cfg)
         rows.append(row)
     return rows
+
+
+def _fault_window(spec: dict[str, Any], k: float, v_sec_dev: float, rng: random.Random,
+                  pre_ms: float = 200, post_ms: float = 600) -> dict[str, Any]:
+    """Per-cycle (20 ms) RMS current (% of rated) and secondary voltage (% of nominal) per phase around one fault.
+    Faulted phases: current jumps to spec['pu'] x rated (symmetrical RMS) and their voltage collapses; healthy phases keep the load (and rise ~4 % in a ground fault). When the
+    breaker (or its backup) opens, the LV side reads zero current and voltage."""
+    n = int(round((pre_ms + post_ms) / (CYCLE * 1000)))
+    start = int(round(pre_ms / (CYCLE * 1000)))
+    clear = start + int(round(spec["clear_ms"] / (CYCLE * 1000)))
+    i_rows, v_rows, p_rows = [], [], []
+    for c in range(n):
+        i_row, v_row = [], []
+        for ph, name in enumerate("RYB"):
+            i = k * 100 * (1 - 0.02 * ph)
+            v = 100 + v_sec_dev
+            if start <= c < clear:
+                if name in spec["phases"]:
+                    i = spec["pu"] * 100            # symmetrical RMS; the DC-offset first peak is kappa in fault_effects
+                    v = spec["v_pct"]
+                elif len(spec["phases"]) == 1:
+                    v *= 1.04
+            elif c >= clear:
+                i, v = 0.0, 0.0
+            i_row.append(round(max(i, 0.0) * (1 + rng.gauss(0, 0.004)), 1))
+            v_row.append(round(max(v + (rng.gauss(0, 0.3) if v else 0.0), 0.0), 2))
+        i_rows.append(i_row)
+        v_rows.append(v_row)
+        p_rows.append(spec["pressure_kpa"] * min(1.0, max(0, c - start + 1) / max(1, clear - start)) if c >= start else 0.0)
+    return {"t0": spec["t"] - pre_ms / 1000, "dt": CYCLE, "i_pct": i_rows, "v_pct": v_rows,
+            "pressure_rise_kpa": [round(x, 2) for x in p_rows]}
 
 
 def _windows_20ms(data: dict[str, Any], cfg: dict[str, Any], rng: random.Random) -> list[dict[str, Any]]:

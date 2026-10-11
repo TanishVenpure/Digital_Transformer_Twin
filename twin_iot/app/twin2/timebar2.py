@@ -8,6 +8,12 @@ R = V_meas - V_exp,noleak ~ -L_cum. Two leaks in the year:
 Precision devices (once a day): per-phase deviation from a reference instrument. Each device drifts after
 calibration until a phase passes 1 % (every ~4-6 months), is flagged for maintenance and recalibrated a few
 days later.
+
+Through-fault duty (once a day): every short circuit the transformer carries (fed from it, cleared downstream) is
+counted with its I2t and peak force against the IEC 60076-5 design withstand. Repeated severe through-faults
+loosen the windings: after `severe_faults_warning` severe ones (force >= severe_force_pct) THROUGH_FAULT_DUTY asks
+for winding tests (SFRA, winding resistance, ratio), done a couple of weeks later. The timebar-1 day (2026-07-15)
+is one day of this year: its two recorded short circuits are its through-faults.
 """
 import math
 import random
@@ -19,7 +25,22 @@ from app.twin2 import formulas as f
 DEVICES = ("current", "voltage", "temperature")
 
 
-def simulate(cfg: dict[str, Any] | None = None) -> dict[str, Any]:
+def _year_faults(days: int, start: datetime, rng: random.Random, skip_day: int | None) -> dict[int, list[dict]]:
+    """External short circuits through the year, more often in the monsoon (lightning, wet cables, trees)."""
+    out: dict[int, list[dict]] = {}
+    for d in range(days):
+        if d == skip_day:
+            continue
+        month = (start + timedelta(days=d)).month
+        p = 0.035 if month in (6, 7, 8, 9) else 0.010
+        if rng.random() < p:
+            out.setdefault(d, []).append({"force_pct_of_design": round(rng.uniform(4, 48), 1),
+                                          "i2t_pct_of_withstand": round(rng.uniform(0.2, 6), 2), "source": "simulated"})
+    return out
+
+
+def simulate(cfg: dict[str, Any] | None = None, day_faults: dict[str, Any] | None = None) -> dict[str, Any]:
+    """day_faults: {"day": index, "faults": [fault_effects of the timebar-1 short circuits]}."""
     cfg = cfg or f.load_config()
     tb = cfg["timebar2"]
     o = cfg["oil_leak"]
@@ -44,6 +65,16 @@ def simulate(cfg: dict[str, Any] | None = None) -> dict[str, Any]:
     for i, dev in enumerate(DEVICES):
         drift[dev] = {"phase": rng.randrange(3), "since": 0, "offset": 15 * i,
                       "rate": rng.uniform(0.75, 0.85) / rng.uniform(120, 165), "flagged": None, "recal": None}
+
+    scfg = cfg["short_circuit"]
+    tf_day = day_faults["day"] if day_faults else None
+    year_faults = _year_faults(days, start, random.Random(tb["seed"] + 211), tf_day)
+    if day_faults:
+        year_faults[tf_day] = [dict(e, source="timebar 1") for e in day_faults["faults"]]
+    tf_count = tf_severe = 0
+    tf_i2t = 0.0
+    tf_flagged = None
+    tf_tested_on = None
 
     for d in range(days):
         day = start + timedelta(days=d)
@@ -107,5 +138,30 @@ def simulate(cfg: dict[str, Any] | None = None) -> dict[str, Any]:
                           rate=rng.uniform(0.75, 0.85) / rng.uniform(120, 165), offset=0)
             row[dev] = devs
             row[f"{dev}_status"] = pstat
+        # --- through-fault duty
+        for ft in year_faults.get(d, []):
+            tf_count += 1
+            tf_i2t += ft["i2t_pct_of_withstand"]
+            severe = ft["force_pct_of_design"] >= scfg["severe_force_pct"]
+            tf_severe += severe
+            events.append({"day": d, "type": "THROUGH_FAULT", "level": "WARNING" if severe else "NORMAL",
+                           "message": f"Through-fault ({ft['source']}): peak force {ft['force_pct_of_design']:.0f} % of the "
+                                      f"design withstand, I2t {ft['i2t_pct_of_withstand']:.1f} % of the 2 s withstand"
+                                      + (" - severe." if severe else ".")})
+        if tf_severe >= scfg["severe_faults_warning"] and tf_flagged is None:
+            tf_flagged = d
+            tf_tested_on = d + 14
+            events.append({"day": d, "type": "THROUGH_FAULT_DUTY", "level": "MAINTENANCE",
+                           "message": f"{tf_severe} severe through-faults since the last winding test ({tf_count} in all, "
+                                      f"cumulative I2t {tf_i2t:.1f} % of one withstand): repeated short-circuit forces can "
+                                      f"loosen or move the windings - run SFRA, winding resistance and ratio tests."})
+        if tf_tested_on is not None and d >= tf_tested_on:
+            events.append({"day": d, "type": "THROUGH_FAULT_DUTY_TESTED", "level": "MAINTENANCE",
+                           "message": "Winding tests done (SFRA, resistance, ratio within limits): severe through-fault count reset."})
+            tf_severe, tf_flagged, tf_tested_on = 0, None, None
+        row.update({"through_faults": tf_count, "through_faults_severe": tf_severe,
+                    "through_fault_i2t_pct": round(tf_i2t, 2),
+                    "through_fault_force_pct": max((ft["force_pct_of_design"] for ft in year_faults.get(d, [])), default=None),
+                    "through_fault_status": "MAINTENANCE_REQUIRED" if tf_flagged is not None else "NORMAL"})
         rows.append(row)
     return {"start": start, "days": days, "rows": rows, "events": events}

@@ -33,8 +33,9 @@ MONITOR_NAME = {
     (2, "prec_voltage"): "Voltage device (PT), daily", (2, "prec_temperature"): "Temperature device, daily",
     (2, "insulation"): "Paper insulation (ageing)", (2, "moisture"): "Moisture (oil sensor)",
     (2, "dga"): "Dissolved gases (CO / CO2)",
+    (1, "fault"): "Short-circuit protection", (2, "through_faults"): "Through-fault duty",
 }
-FOLLOW_UP = ("_RECALIBRATED", "_REPAIRED", "_RECONDITIONED")
+FOLLOW_UP = ("_RECALIBRATED", "_REPAIRED", "_RECONDITIONED", "_TESTED")
 
 
 def _resolves(follow: dict[str, Any], check: dict[str, Any]) -> bool:
@@ -42,6 +43,8 @@ def _resolves(follow: dict[str, Any], check: dict[str, Any]) -> bool:
         return False
     if follow["type"] == "OIL_LEAK_REPAIRED":
         return check["type"] in ("OIL_LEAK", "MINIMUM_OIL_LEVEL")
+    if follow["type"] == "THROUGH_FAULT_DUTY_TESTED":    # winding tests close the duty check and the severe faults
+        return check["type"] in ("THROUGH_FAULT_DUTY", "THROUGH_FAULT")
     if follow["type"] == "OIL_RECONDITIONED":       # hot-oil vacuum drying + degassing closes the moisture check
         return check["type"] == "PAPER_MOISTURE"
     return follow["type"] == check["type"] + "_RECALIBRATED"
@@ -79,7 +82,7 @@ def build_sheet(tb1: dict[str, Any], tb2: dict[str, Any]) -> list[dict[str, Any]
 
     events2 = sorted(tb2["events"], key=lambda e: e["day"])
     for e in events2:
-        if e["type"].endswith(FOLLOW_UP):
+        if e["type"].endswith(FOLLOW_UP) or e["level"] == "NORMAL":   # follow-ups close checks; minor faults are logged only
             continue
         follow = next((f for f in events2 if f["day"] >= e["day"] and f["type"].endswith(FOLLOW_UP)
                        and _resolves(f, e)), None)
