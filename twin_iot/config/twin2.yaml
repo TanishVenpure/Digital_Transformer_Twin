@@ -95,3 +95,40 @@ short_circuit:                 # timebar 1 (20 ms per-cycle RMS around each faul
   # timebar 2: cumulative through-fault duty
   severe_force_pct: 25.0       # a fault above 25 % of the design peak force counts as severe
   severe_faults_warning: 3     # this many severe through-faults -> THROUGH_FAULT_DUTY (winding tests)
+
+health:                        # health index 0-100 (100 = as designed). Each sub-score maps a measurement to 0-100
+  # through piecewise-linear points [value, score]; the index is the weighted mean of the available sub-scores,
+  # capped at (worst sub-score + cap_margin) so one bad part cannot be averaged away.
+  # Bands: >= good Good, >= fair Fair, >= poor Poor, below Critical.
+  good: 85
+  fair: 70
+  poor: 50
+  cap_margin: 15
+  timebar1:                    # every second
+    weights: {loading: 12, voltage: 8, top_oil: 14, wti: 14, ageing: 10, winding_excess: 10, cooling: 10,
+              pressure: 12, protection: 10}
+    points:
+      loading: [[90, 100], [100, 85], [120, 40], [130, 10]]          # % of rated (100-120 % allowed overload)
+      voltage: [[0.5, 100], [1.0, 60], [1.5, 20]]                    # deviation as a fraction of that winding's limit
+      top_oil: [[75, 100], [95, 60], [105, 25], [115, 0]]            # degC (OTI alarm 95, trip 105)
+      wti: [[90, 100], [110, 60], [120, 25], [130, 0]]               # degC (WTI alarm 110, trip 120)
+      ageing: [[0, 100], [2, 70], [4, 35], [6, 10]]                  # log2 of the IEC ageing rate V (V = 1, 4, 16, 64)
+      winding_excess: [[0.5, 100], [1.5, 75], [5, 35], [10, 10]]     # K above the IEC model (10 min average)
+      cooling: [[1.05, 100], [1.15, 75], [1.6, 35], [2.5, 10]]       # measured / expected top-oil rise (10 min average)
+      pressure: [[150, 100], [185, 60], [230, 20], [250, 0]]         # kPa abs
+      precision: [[0.5, 100], [1.0, 60], [1.5, 25]]                  # % deviation from the reference (data confidence)
+    fault_force_factor: 0.6    # a short circuit takes force% x this off the protection score ...
+    fault_recovery_min: 30     # ... recovering with this time constant
+    breaker_failure_score: 35  # breaker failed: protection score while out, then breaker_overhaul_score until repaired
+    breaker_overhaul_score: 60
+  timebar2:                    # every day
+    weights: {oil: 35, mechanical: 30, thermal: 35}
+    points:
+      oil_residual: [[-1, 100], [-3, 60], [-12, 20]]                 # L vs the no-leak expectation
+      oil_above_minimum: [[10, 100], [0, 20]]                        # L above the minimum volume
+      thermal: [[60, 100], [75, 70], [90, 35]]                       # daily mean oil temperature, degC
+      precision: [[0.5, 100], [1.0, 60], [1.5, 25]]
+    severe_fault_penalty: 0.25 # mechanical score loses force% x this per severe through-fault since the last winding test
+    minor_fault_penalty: 0.05  # ... and force% x this per minor one
+    duty_open_cap: 60          # while winding tests are requested (THROUGH_FAULT_DUTY) the score is held at most here
+    mechanical_floor: 40       # faults within the design withstand never take it lower on their own

@@ -244,3 +244,33 @@ def test_timebar1_short_circuits_and_timebar2_through_fault_duty(payloads):
     assert "THROUGH_FAULT_DUTY" in types2 and "THROUGH_FAULT_DUTY_TESTED" in types2
     day = (__import__("datetime").date.fromisoformat(tb1["start"][:10]) - __import__("datetime").date.fromisoformat(tb2["start"])).days
     assert tb2["series"]["through_faults"][day] - tb2["series"]["through_faults"][day - 1] == 2   # the two timebar-1 faults
+
+
+# ---------------------------------------------------------------- overall health score
+
+from app.twin2 import health as hl   # noqa: E402
+
+HC = CFG["health"]
+
+
+def test_score_interpolates_and_clamps():
+    pts = HC["timebar1"]["points"]["top_oil"]
+    assert hl.score(60, pts) == 100 and hl.score(95, pts) == pytest.approx(60) and hl.score(200, pts) == 0
+    assert hl.score(None, pts) is None
+
+
+def test_one_bad_part_cannot_be_averaged_away():
+    subs = {k: 100.0 for k in hl.SUB1}
+    subs["top_oil"] = 20.0
+    hi = hl.combine(subs, HC["timebar1"]["weights"], HC["cap_margin"])
+    assert hi == pytest.approx(20 + HC["cap_margin"]) and hl.band(hi, HC) == "CRITICAL"
+
+
+def test_health_score_by_the_second_and_by_the_day(payloads):
+    tb1, tb2 = payloads["timebar1"], payloads["timebar2"]
+    h1, h2 = tb1["series"]["health_1s"], tb2["series"]["health"]
+    assert len(h1) == tb1["minutes"] * 60 and len(h2) == tb2["days"]
+    assert min(h1[:3 * 3600]) >= HC["good"] - 2                 # quiet night (one through-fault at 01:47 dents it)
+    assert min(h1[13 * 3600:15 * 3600]) < HC["poor"]            # cooling failure / OTI trip
+    assert h2[14] < h2[13] and min(h2) < HC["poor"] and h2[-1] >= HC["good"]
+    assert not [e for e in tb1["events"] + tb2["events"] if e["type"].startswith("HEALTH")]   # a score, not a signal

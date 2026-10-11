@@ -22,7 +22,7 @@ as frosted-glass panels:
 
 | Where | Panel |
 |---|---|
-| Top | Header: transformer rating, voltage class and rated currents, timebar 1 clock and timebar 2 date, overall status |
+| Top | Header: transformer rating, voltage class and rated currents, timebar 1 clock and timebar 2 date, overall status, and the two health scores |
 | Top centre | Alarm card: which monitor the 3D view is focused on, and its status |
 | Left | Monitor cards, grouped by timebar (9 fast-signal monitors, 4 daily monitors) |
 | Right | Assistant (dropdown), Signals & maintenance, Data (dropdown with the datasets) |
@@ -180,6 +180,20 @@ main breaker; the backup clears it after 240 ms (breaker failure, 56 % of the de
 per cycle and per phase from 200 ms before to 600 ms after (`timebar1_faults_20ms.csv`), and the transformer
 stays out of service for 20 and 45 minutes. The 1 s stream is the second before the fault; the fault itself is
 only in the 20 ms detail.
+
+### Health scores (header)
+
+Two overall numbers from 0 to 100 in the header: **Health** at the timebar-1 cursor, **by the second**,
+and **Daily** at the timebar-2 cursor. Each part of the transformer is scored from its own measurement:
+100 as designed, about 60 at its alarm limit, about 20–25 at its trip limit. The score is the weighted mean
+of the parts, never more than the worst part + 15. Bands: good ≥ 85, fair ≥ 70, poor ≥ 50, critical below.
+- **By the second:** loading, voltage, top oil, WTI, insulation ageing, winding excess, cooling, tank
+  pressure, and short-circuit protection / breaker.
+- **Daily:** oil volume, through-fault duty, and thermal condition (on 15 July, the timebar-1 day).
+
+The precision devices are left out: they affect how far the readings can be trusted, not the
+transformer. Points and weights are in `config/twin2.yaml` (`health`), the code in
+`twin_iot/app/twin2/health.py`.
 
 ## 4. Monitor cards and graphs
 

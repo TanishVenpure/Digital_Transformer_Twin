@@ -18,7 +18,7 @@ from typing import Any
 
 from app.paths import PROJECT_ROOT
 from app.twin2 import formulas as f
-from app.twin2 import timebar1, timebar2
+from app.twin2 import health, timebar1, timebar2
 
 OUT_DIR = PROJECT_ROOT / "data" / "twin2"
 RANK = {"OFF": -1, "NO_DATA": -1, "NORMAL": 0, "WARNING": 1, "PREDICTED_MAINTENANCE": 2, "MAINTENANCE_REQUIRED": 3,
@@ -219,6 +219,11 @@ def build(cfg: dict[str, Any] | None = None, out_dir: Path | None = None) -> dic
     sec = d1["sec"]
     flags = thermal_flags(sec, cfg)
     ev1 = timebar1_events(d1, flags, cfg)
+    # overall health score: every second (timebar 1) and every day (timebar 2); see app/twin2/health.py
+    h1 = health.timebar1(sec, d1["pressure"], d1["precision"], d1["faults"], cfg)["health"]
+    hourly_worst = [min(x for x in h1[h * 3600:(h + 1) * 3600] if x is not None) for h in range(len(h1) // 3600)]
+    h2 = health.timebar2(d2["rows"], cfg, {"day": day_index, "thermal": sum(hourly_worst) / len(hourly_worst)}
+                         if day_faults else None)["health"]
     n_min = len(sec["top_oil"]) // 60
 
     # ---------- per-minute playback series (min / max keep short excursions visible)
@@ -262,6 +267,7 @@ def build(cfg: dict[str, Any] | None = None, out_dir: Path | None = None) -> dic
         if fl["detection"]:
             fault_peak[int(fl["t"]) // 60] = fl["detection"]["peak_current_pct"]
     series["fault_peak_pct"] = fault_peak
+    series["health_1s"] = [None if x is None else round(x) for x in h1]      # one value per second
     status = {
         "loading": [_minute_status(sec["overload"], m, ovmap) for m in range(n_min)],
         "voltage": [_minute_status(sec["voltage"], m, {"OVERVOLTAGE": "WARNING", "UNDERVOLTAGE": "WARNING"}) for m in range(n_min)],
@@ -298,6 +304,7 @@ def build(cfg: dict[str, Any] | None = None, out_dir: Path | None = None) -> dic
         "wti_alarm_c": th["wti_alarm_c"], "wti_trip_c": th["wti_trip_c"], "top_oil_rise_limit_k": th["top_oil_rise_limit_k"],
         "residual_min_k": th["residual_min_k"], "pressure_warning_kpa": pr["warning_kpa_abs"], "pressure_limit_kpa": pr["limit_kpa_abs"],
         "precision_max_pct": cfg["precision"]["max_deviation_pct"],
+        "health_good": cfg["health"]["good"], "health_fair": cfg["health"]["fair"], "health_poor": cfg["health"]["poor"],
         "impedance_pct": scfg["impedance_pct"], "short_circuit_multiple": round(f.rated_short_circuit_multiple(scfg), 1),
         "short_circuit_ka_lv": round(f.rated_short_circuit_multiple(scfg) * d1["i_rated_sec"] / 1000, 1),
         "sc_pickup_multiple": scfg["pickup_multiple"], "sc_sag_pct": scfg["sag_pct"],
@@ -331,6 +338,7 @@ def build(cfg: dict[str, Any] | None = None, out_dir: Path | None = None) -> dic
                       "volume_expected": [r["volume_expected_noleak"] for r in rows],
                       "volume_measured": [r["volume_measured"] for r in rows], "residual": [r["residual"] for r in rows],
                       "cumulative_leak": [r["cumulative_leak"] for r in rows],
+                      "health": h2,
                       **{key: [r[key] for r in rows] for key in ("through_faults", "through_faults_severe",
                                                                   "through_fault_i2t_pct", "through_fault_force_pct")},
                       **{f"prec_{dev}": [r[dev] for r in rows] for dev in timebar2.DEVICES}},

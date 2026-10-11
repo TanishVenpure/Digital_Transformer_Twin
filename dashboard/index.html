@@ -407,6 +407,8 @@
     <div class="head-right">
       <div class="clock"><b id="clock">--</b><span id="clock-sub">waiting for data</span></div>
       <span class="pill" id="overall">No data</span>
+      <span class="pill" id="health-now" title="Health score 0-100 at the timebar-1 cursor, by the second (Good >= 85, Fair >= 70, Poor >= 50)">Health —</span>
+      <span class="pill" id="health-day" title="Daily health score 0-100 at the timebar-2 cursor (Good >= 85, Fair >= 70, Poor >= 50)">Daily —</span>
     </div>
   </header>
 
@@ -514,7 +516,7 @@
 <script src="twin3d.js?v=20261011-1"></script>
 <script src="maint-events.js?v=20261011-popups1"></script>
 <script src="maintenance-popups.js?v=20261011-popups1"></script>
-<script src="timebars.js?v=20261011-sc1"></script>
+<script src="timebars.js?v=20261011-hs2"></script>
 <script>
 (() => {
   const $ = (id) => document.getElementById(id);

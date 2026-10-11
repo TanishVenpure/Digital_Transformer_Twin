@@ -243,7 +243,8 @@
     const q = (s) => host.querySelector(s);
     const rate = () => { const k = SPEEDS[p.speed]; q('.rate').textContent = `1 ${opts.unit} every ${+(p.tick / k).toPrecision(3)} s` + (k === 1 ? '' : ` (${p.tick} s at ${k}×)`); };
     const set = (pos) => { p.pos = Math.max(0, Math.min(p.n - 1, pos)); draw(); p.onChange(Math.floor(p.pos)); };
-    const draw = () => { q('.knob').style.left = `${(p.pos / (p.n - 1)) * 100}%`; q('.time').textContent = opts.label(Math.floor(p.pos)); };
+    const draw = () => { q('.knob').style.left = `${(p.pos / (p.n - 1)) * 100}%`; q('.time').textContent = opts.label(Math.floor(p.pos));
+      if (opts.onTick) opts.onTick(p.pos); };
     // 20 ms player tick; wall-clock based so the speed holds even if the browser throttles
     const tick = () => { const now = performance.now(), dt = (now - p.last) / 1000; p.last = now; const before = Math.floor(p.pos);
       p.pos = Math.min(p.n - 1, p.pos + (dt / p.tick) * SPEEDS[p.speed]); draw(); if (Math.floor(p.pos) !== before) p.onChange(Math.floor(p.pos)); if (p.pos >= p.n - 1) play(false); };
@@ -264,7 +265,7 @@
         for (let i = i0; i < i1; i++) s = worst([s, opts.stripStatus(i)]); x2.globalAlpha = 0.8; x2.fillStyle = s ? COLOR[s] : 'rgba(255,255,255,.12)'; x2.fillRect(x, 0, 1, 10); } };
     new ResizeObserver(strip).observe(track);
     rate(); draw();
-    return { host, set, get pos() { return Math.floor(p.pos); }, play };
+    return { host, set, get pos() { return Math.floor(p.pos); }, get exact() { return p.pos; }, play };
   }
 
   // ---------------------------------------------------------------- app
@@ -298,7 +299,8 @@
     const players = $('timebars');
     const p1 = Player({ title: 'Timebar 1 · ' + new Date(day0).toISOString().slice(0, 10) + ' · fast signals', n: tb1.minutes, unit: 'minute', tick: 0.25,
       step: 60, stepName: 'one hour', label: (m) => `${clock1(m)} UTC`, tickLabel: (m) => clock1(m),
-      stripStatus: (m) => worst(mons.filter((x) => x.tb === 1).map((x) => x.status(m))), onChange: (m) => { state.m = m; render(); } });
+      stripStatus: (m) => worst(mons.filter((x) => x.tb === 1).map((x) => x.status(m))), onChange: (m) => { state.m = m; render(); },
+      onTick: (pos) => healthNow(pos) });
     const p2 = Player({ title: 'Timebar 2 · one year · daily', n: tb2.days, unit: 'day', tick: 0.5, step: 7, stepName: 'one week',
       label: (d) => `${date2(d)} · day ${d + 1} of ${tb2.days}`, tickLabel: (d) => date2(d).slice(0, 7),
       stripStatus: (d) => worst(mons.filter((x) => x.tb === 2).map((x) => x.status(d))), onChange: (d) => { state.d = d; render(); } });
@@ -312,6 +314,25 @@
     const Lh = tb1.limits;
     $('status').textContent = `CPRI 630 kVA · 11 / 0.433 kV · voltage: primary +${Lh.voltage_primary_high_pct} / −${Lh.voltage_primary_low_pct} %, ` +
       `secondary +${Lh.voltage_secondary_high_pct} / −${Lh.voltage_secondary_low_pct} % · I_rated ${Lh.i_rated_primary_a} A / ${Lh.i_rated_secondary_a} A`;
+
+    // overall health scores (0-100): timebar 1 by the second, timebar 2 by the day
+    function hBand(v, L) {
+      return v == null ? 'NO_DATA' : v >= L.health_good ? 'NORMAL' : v >= L.health_fair ? 'WARNING' : v >= L.health_poor ? 'MAINTENANCE_REQUIRED' : 'CRITICAL';
+    }
+    function hWord(v, L) {
+      return v == null ? '' : v >= L.health_good ? 'good' : v >= L.health_fair ? 'fair' : v >= L.health_poor ? 'poor' : 'critical';
+    }
+    function healthNow(pos) {
+      const h = tb1.series.health_1s || [], s = Math.min(h.length - 1, Math.max(0, Math.floor(pos * 60)));
+      const v = h[s], el = $('health-now');
+      el.className = 'pill s-' + hBand(v, tb1.limits);
+      el.textContent = v == null ? 'Health —' : `Health ${v} · ${hWord(v, tb1.limits)}`;
+    }
+    function healthDay() {
+      const v = (tb2.series.health || [])[state.d], el = $('health-day');
+      el.className = 'pill s-' + hBand(v, tb1.limits);
+      el.textContent = v == null ? 'Daily —' : `Daily ${Math.round(v)} · ${hWord(v, tb1.limits)}`;
+    }
 
     let lastModel = null;
     function render() {
@@ -331,6 +352,8 @@
       $('count-tb1').textContent = counts[1] ? `${counts[1]} need attention` : 'All within limits';
       $('count-tb2').textContent = counts[2] ? `${counts[2]} need attention` : 'All within limits';
       const overall = worst(Object.values(statuses));
+      healthDay();
+      healthNow(p1.exact);
       const pill = $('overall'); pill.className = 'pill s-' + overall;
       pill.textContent = overall === 'NORMAL' ? 'All monitors normal' : tb1.series.energized[state.m] ? `Overall: ${LABEL[overall]}` : 'Breaker open · out of service';
       // 3D: worst status per sensor slot; focus on the worst monitor

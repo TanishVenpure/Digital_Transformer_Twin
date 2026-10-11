@@ -162,6 +162,8 @@ def simulate(cfg: dict[str, Any] | None = None, day_faults: dict[str, Any] | Non
         row.update({"through_faults": tf_count, "through_faults_severe": tf_severe,
                     "through_fault_i2t_pct": round(tf_i2t, 2),
                     "through_fault_force_pct": max((ft["force_pct_of_design"] for ft in year_faults.get(d, [])), default=None),
+                    "through_fault_forces": [ft["force_pct_of_design"] for ft in year_faults.get(d, [])],
+                    "through_fault_duty_open": tf_flagged is not None,
                     "through_fault_status": "MAINTENANCE_REQUIRED" if tf_flagged is not None else "NORMAL"})
         rows.append(row)
     return {"start": start, "days": days, "rows": rows, "events": events}
