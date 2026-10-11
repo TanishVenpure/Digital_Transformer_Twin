@@ -359,9 +359,31 @@
     .plot { height: 300px; }
     .modal { padding: 10px; }
   }
+  /* maintenance popups raised as either timebar crosses a check */
+  .maint-toasts { position: fixed; right: 392px; top: 92px; z-index: 6; width: 320px; display: flex; flex-direction: column; gap: 6px; pointer-events: none; }
+  .maint-toast {
+    pointer-events: auto; background: var(--glass); -webkit-backdrop-filter: var(--glass-blur); backdrop-filter: var(--glass-blur);
+    border: 1px solid var(--glass-edge); border-left: 3px solid var(--c, var(--accent)); border-radius: 10px;
+    padding: 10px 14px; font-size: 12px; cursor: pointer; animation: toastIn .3s ease-out; box-shadow: 0 4px 20px rgba(0,0,0,.4);
+  }
+  .maint-toast:hover { border-color: var(--accent); border-left-color: var(--c, var(--accent)); }
+  .maint-toast .toast-head { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; }
+  .maint-toast .toast-signal { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; padding: 1px 6px; border-radius: 4px;
+    color: var(--c); background: color-mix(in srgb, var(--c) 20%, transparent); }
+  .maint-toast .toast-title { font-weight: 600; flex: 1; }
+  .maint-toast .toast-dismiss { background: none; border: none; color: var(--muted); font-size: 16px; padding: 0 2px; line-height: 1; }
+  .maint-toast .toast-body { color: var(--muted); font-size: 11px; line-height: 1.5; }
+  .maint-toast .toast-body .action-line { color: var(--text); margin-top: 2px; }
+  .maint-toast.fade-out { animation: toastOut .3s ease-in forwards; }
+  @keyframes toastIn { from { opacity: 0; transform: translateX(40px); } to { opacity: 1; transform: translateX(0); } }
+  @keyframes toastOut { to { opacity: 0; transform: translateX(40px); } }
+  @media (max-width: 1300px) { .maint-toasts { right: 352px; } }
+  @media (max-width: 1100px) { .maint-toasts { left: 16px; right: 16px; top: 90px; width: auto; } }
+  @media (prefers-reduced-motion: reduce) { .maint-toast, .maint-toast.fade-out { animation: none; } }
 </style>
 </head>
 <body>
+<div class="maint-toasts" id="maint-toasts" aria-live="polite" aria-label="Recorded maintenance alerts"></div>
 
 <!-- Hero: the 3D model on a black canvas -->
 <div class="hero model-body" id="model-viewport">
@@ -393,14 +415,11 @@
   <aside class="col-right">
     <details class="panel glass" id="chat-panel">
       <summary class="panel-title"><span>Assistant</span><span class="hint">Ask about the transformer</span></summary>
-      <div class="chat-body">
-        <div class="msg">Assistant responses will appear here.</div>
-        <div class="msg user">User question placeholder</div>
-      </div>
-      <div class="chat-input">
-        <input type="text" placeholder="Ask about the transformer…" disabled>
-        <button disabled>Send</button>
-      </div>
+      <div class="chat-body" id="chat-body"><div class="msg">Ask about the recorded transformer data at both playback cursors. Gemini is optional; no health score is calculated.</div></div>
+      <form class="chat-input" id="chat-form">
+        <input type="text" id="chat-input" placeholder="Ask about the transformer…" maxlength="2000" required>
+        <button id="chat-send" type="submit">Send</button>
+      </form>
     </details>
 
     <div class="panel glass maint">
@@ -491,7 +510,9 @@
 <script src="vendor/three/RoomEnvironment.js"></script>
 <script src="metal.js?v=20261011-1"></script>
 <script src="twin3d.js?v=20261011-1"></script>
-<script src="timebars.js?v=20261011-3"></script>
+<script src="maint-events.js?v=20261011-popups1"></script>
+<script src="maintenance-popups.js?v=20261011-popups1"></script>
+<script src="timebars.js?v=20261011-popups1"></script>
 <script>
 (() => {
   const $ = (id) => document.getElementById(id);
@@ -565,7 +586,49 @@
   $("view-spin").onclick = () => { $("view-spin").textContent = twin.toggleSpin() ? "Stop" : "Spin"; };
 
   // the two timebars drive the cards, the signal list, the graphs and the 3D model
-  TimebarsApp.start({ twin }).catch((e) => { $("status").textContent = "API unavailable: " + e.message; });
+  let assistantCursor = null;
+  const maintenancePopups = MaintenancePopups.create({ container: $('maint-toasts'),
+    openCheck: (tb, monitor) => { if (TimebarsApp.openCheck) TimebarsApp.openCheck(tb, monitor); } });
+  const appendMessage = (text, cls = '') => {
+    const item = document.createElement('div'); item.className = 'msg ' + cls;
+    item.style.whiteSpace = 'pre-wrap'; item.textContent = text;
+    $('chat-body').appendChild(item); item.scrollIntoView({block:'nearest'}); return item;
+  };
+  $('chat-form').addEventListener('submit', async (event) => {
+    event.preventDefault(); const question = $('chat-input').value.trim();
+    if (!question || $('chat-send').disabled) return;
+    appendMessage(question, 'user'); $('chat-input').value = '';
+    $('chat-send').disabled = $('chat-input').disabled = true; const thinking = appendMessage('Reading recorded evidence…');
+    const controller = new AbortController(); const timeout = setTimeout(() => controller.abort(), 40000);
+    try {
+      const response = await fetch('/api/assistant/chat', {method:'POST',
+        headers:{'Content-Type':'application/json'}, signal:controller.signal,
+        body:JSON.stringify({transformer_id:'CPRI-630', question, ...(assistantCursor || {})})});
+      const result = await response.json();
+      if (!response.ok) throw new Error(typeof result.detail === 'string' ? result.detail : 'Request failed');
+      thinking.textContent = ''; thinking.className = 'msg assistant';
+      const answer = document.createElement('div'); answer.textContent = result.answer;
+      thinking.appendChild(answer);
+      const meta = document.createElement('div'); meta.style.fontSize = '11px';
+      const c = result.cursor || {};
+      meta.textContent = result.answer_source + ' · synthetic twin2 data' +
+        (c.timebar1 ? ' · TB1 ' + c.timebar1.slice(11, 16) + ' UTC · TB2 ' + c.timebar2 : '');
+      thinking.appendChild(meta);
+      if (result.facts && result.facts.length) {
+        const details = document.createElement('details'), summary = document.createElement('summary');
+        summary.textContent = result.facts.length + ' cited facts'; details.appendChild(summary);
+        result.facts.forEach((fact) => { const el = document.createElement('div');
+          el.textContent = fact.statement; details.appendChild(el); });
+        thinking.appendChild(details);
+      }
+      if (result.answer_source === 'deterministic_fallback') {
+        const note = document.createElement('div'); note.textContent = 'LLM unavailable; using recorded-data assistant.';
+        thinking.appendChild(note);
+      }
+    } catch (error) { thinking.textContent = 'Assistant unavailable: ' + error.message; }
+    finally { clearTimeout(timeout); $('chat-send').disabled = $('chat-input').disabled = false; $('chat-input').focus(); }
+  });
+  TimebarsApp.start({ twin, onCursor: (cursor) => { assistantCursor = cursor; maintenancePopups.update(cursor); } }).catch((e) => { $("status").textContent = "API unavailable: " + e.message; });
 })();
 </script>
 </body>

@@ -28,7 +28,10 @@ from app.twin3d.selector import load_models, select_model
 DASHBOARD_DIR = Path(os.environ.get("TWIN_DASHBOARD_DIR", PROJECT_ROOT.parent / "dashboard"))
 HOURS_PER_SECOND = 24  # timeline tick: one day of hourly data per second at 1x
 
+from app.api.assistant import router as assistant_router
+
 app = FastAPI(title="Transformer Twin IoT API", version="0.1.0")
+app.include_router(assistant_router)
 live_service = ProcessingService(history_loader=db.load_previous_valid_reading, timestamp_loader=db.load_last_timestamp)
 models = load_models()
 bridge = BlenderBridge(models)
@@ -312,6 +315,14 @@ def twin2_timebar(n: int) -> dict[str, Any]:
     if n not in (1, 2):
         raise HTTPException(404, "Timebar must be 1 or 2")
     return load_payload(n)
+
+
+@app.get("/api/twin2/sheet")
+def twin2_sheet() -> dict[str, Any]:
+    """Recorded checks from existing playback events; the browser applies each timebar cursor."""
+    from app.twin2.sheet import TRANSFORMER_ID, load_sheet
+    checks, _, _ = load_sheet()
+    return {"transformer_id": TRANSFORMER_ID, "checks": checks}
 
 
 @app.post("/api/twin2/rebuild")

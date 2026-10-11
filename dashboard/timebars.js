@@ -248,7 +248,7 @@
   }
 
   // ---------------------------------------------------------------- app
-  async function start({ twin }) {
+  async function start({ twin, onCursor }) {
     const [tb1, tb2] = await Promise.all([1, 2].map((n) => fetch(`${API}/timebar/${n}`).then((r) => r.json())));
     const day0 = Date.parse(tb1.start), y0 = Date.parse(tb2.start + 'T00:00:00Z');
     const clock1 = (m, full) => new Date(day0 + m * 60000).toISOString().slice(full ? 0 : 11, 16).replace('T', ' ');
@@ -329,6 +329,7 @@
       $('model-call').textContent = tb1.series.energized[state.m] ? '' : 'Breaker open: transformer out of service';
       renderEvents();
       if (state.open) renderModalSoon();
+      if (onCursor) onCursor({ until: new Date(day0 + state.m * 60000).toISOString(), until2: date2(state.d) });
     }
 
     function eventsUpTo() {
@@ -409,6 +410,10 @@
 
     render();
     root.TimebarsApp.players = { p1, p2 };
+    root.TimebarsApp.openCheck = (tb, monitor) => {
+      const id = tb === 2 && monitor.startsWith('prec') ? 'y_' + monitor : monitor;
+      if (mons.some((m) => m.id === id)) openModal(id);
+    };
   }
 
   root.TimebarsApp = { start };

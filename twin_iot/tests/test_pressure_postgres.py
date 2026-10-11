@@ -159,7 +159,7 @@ def test_all_rules_share_history_without_new_tables(api_db):
             "voltage_r": 102, "voltage_y": 100, "voltage_b": 100,
             "reference_voltage_r": 100, "reference_voltage_y": 100, "reference_voltage_b": 100,
             "oil_level": 10, "top_oil_temperature": 110, "ambient_temperature": 30,
-            "winding_temperature_r": 90, "winding_temperature_y": 90, "winding_temperature_b": 90, "oil_pressure": 20}
+            "winding_temperature_r": 120, "winding_temperature_y": 120, "winding_temperature_b": 120, "oil_pressure": 20}
     response = client.post("/api/readings", json={"transformer_id": "T1", "timestamp": NOW.isoformat(), "data": data})
     assert response.status_code == 200
     alerts = client.get("/api/alerts/T1").json()
